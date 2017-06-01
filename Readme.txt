@@ -12,3 +12,5 @@ global_nn_recognizer_crh.h
 global_nn_recognizer_crh.hpp
 	initialize: computation of descriptors, create flann index
 	recognize: start nearest neighbour search, perform camera roll histogram alignment, perform ICP
+render_view_tesselated_sphere.cpp
+	create the different views from a circle around the point cloud
