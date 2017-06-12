@@ -28,10 +28,11 @@
 #include <vtkRenderer.h>
 #include <vtkPolyDataMapper.h>
 #include <vtkPointPicker.h>
-#include <vtkCylinderSource.h>
-#include <vtkTriangleFilter.h>
+ //<ramona
 #include <vtkTransformPolyDataFilter.h>
 #include <vtkRegularPolygonSource.h>
+#include <pcl/filters/voxel_grid.h>
+//ramona>
 
 void
 pcl::apps::RenderViewsTesselatedSphere::generateViews() {
@@ -112,6 +113,7 @@ pcl::apps::RenderViewsTesselatedSphere::generateViews() {
 		totalArea += area;
 	}
 
+	//<ramona
 	vtkSmartPointer<vtkRegularPolygonSource> polygonSource = vtkSmartPointer<vtkRegularPolygonSource>::New();
 
 	polygonSource->GeneratePolygonOff(); // Uncomment this line to generate only the outline of the circle
@@ -121,7 +123,7 @@ pcl::apps::RenderViewsTesselatedSphere::generateViews() {
 	polygonSource->Update();
 
 	vtkSmartPointer<vtkTransform> transform = vtkSmartPointer<vtkTransform>::New();
-	transform->RotateZ(-90.0);          // align cylinder to x axis
+	transform->RotateZ(-90.0);          // align cylinder to needle axis
 
 	vtkSmartPointer<vtkTransformPolyDataFilter> transformPD = vtkSmartPointer<vtkTransformPolyDataFilter>::New();
 	transformPD->SetTransform(transform);
@@ -130,6 +132,8 @@ pcl::apps::RenderViewsTesselatedSphere::generateViews() {
 
 	// Get camera positions
 	vtkPolyData *sphere = transformPD->GetOutput();
+	//ramona>
+
 #if VTK_MAJOR_VERSION<6
 	sphere->Update();
 #endif
@@ -143,10 +147,10 @@ pcl::apps::RenderViewsTesselatedSphere::generateViews() {
 		size_t i = 0;
 		for (cells_sphere->InitTraversal(); cells_sphere->GetNextCell(npts_com, ptIds_com);)
 		{
-			sphere->GetPoint(ptIds_com[0], p1_com); //p1 etc. are vertices that define triangle
+			sphere->GetPoint(ptIds_com[0], p1_com); //ramona: p1 etc. are vertices that define triangle
 			sphere->GetPoint(ptIds_com[1], p2_com);
 			sphere->GetPoint(ptIds_com[2], p3_com);
-			vtkTriangle::TriangleCenter(p1_com, p2_com, p3_com, center); //center of triangle defined by p1, ... is computed
+			vtkTriangle::TriangleCenter(p1_com, p2_com, p3_com, center); //ramona: center of triangle defined by p1, ... is computed
 			cam_positions[i] = Eigen::Vector3f(float(center[0]), float(center[1]), float(center[2]));
 			i++;
 		}
@@ -182,9 +186,11 @@ pcl::apps::RenderViewsTesselatedSphere::generateViews() {
 	double cam_pos[3];
 	double first_cam_pos[3];
 
+	//<ramona
 	first_cam_pos[0] = cam_positions[0][0];// *radius_sphere_;
 	first_cam_pos[1] = cam_positions[0][1];// *radius_sphere_;
 	first_cam_pos[2] = cam_positions[0][2];// *radius_sphere_;
+	//ramona>
 
 	//create renderer and window
 	vtkSmartPointer<vtkRenderWindow> render_win = vtkSmartPointer<vtkRenderWindow>::New();
@@ -233,10 +239,12 @@ pcl::apps::RenderViewsTesselatedSphere::generateViews() {
 
 		cam_tmp->SetViewUp(test[0], test[1], test[2]);
 
+		//<ramona
 		/*for (int k = 0; k < 3; k++)
 		{
 		  cam_pos[k] = cam_pos[k] * camera_radius;
 		}*/
+		//ramona>
 
 		cam_tmp->SetPosition(cam_pos);
 		cam_tmp->SetFocalPoint(0, 0, 0);
@@ -478,7 +486,16 @@ pcl::apps::RenderViewsTesselatedSphere::generateViews() {
 
 		renderer->RemoveActor(actor_view);
 
-		generated_views_.push_back(cloud);
+		//<ramona
+		float VOXEL_SIZE = 0.03f;
+		pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_voxelized(new pcl::PointCloud<pcl::PointXYZ>);
+		pcl::VoxelGrid<PointXYZ> voxel_grid;
+		voxel_grid.setInputCloud(cloud);
+		voxel_grid.setLeafSize(VOXEL_SIZE, VOXEL_SIZE, VOXEL_SIZE);
+		voxel_grid.filter(*cloud_voxelized);
+
+		generated_views_.push_back(cloud_voxelized);
+		//ramona>
 
 		//create pose, from OBJECT coordinates to CAMERA coordinates!
 		vtkSmartPointer<vtkTransform> transOCtoCC = vtkSmartPointer<vtkTransform>::New();

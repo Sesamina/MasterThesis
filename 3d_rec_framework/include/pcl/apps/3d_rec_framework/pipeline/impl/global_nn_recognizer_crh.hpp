@@ -11,8 +11,9 @@
 #include <boost/random.hpp>
 #include <boost/random/normal_distribution.hpp>
 #include <pcl/common/time.h>
-#include <pcl/visualization/pcl_visualizer.h>
+ //<ramona
 #include <tuple>
+//ramona>
 
 template<template<class > class Distance, typename PointInT, typename FeatureT>
 void
@@ -56,6 +57,22 @@ pcl::rec_3d_framework::GlobalNNCRHRecognizer<Distance, PointInT, FeatureT>::getC
 	pcl::io::loadPCDFile(dir.str(), *hist);
 }
 
+//<ramona
+template<template<class > class Distance, typename PointInT, typename FeatureT>
+void
+pcl::rec_3d_framework::GlobalNNCRHRecognizer<Distance, PointInT, FeatureT>::getCVFH(ModelT & model, int view_id, int d_id,
+	boost::shared_ptr<pcl::PointCloud<FeatureT>> & hist)
+{
+
+	hist.reset(new pcl::PointCloud<FeatureT>);
+	std::stringstream dir;
+	std::string path = source_->getModelDescriptorDir(model, training_dir_, descr_name_);
+	dir << path << "/descriptor_" << view_id << "_" << d_id << ".pcd";
+
+	pcl::io::loadPCDFile(dir.str(), *hist);
+}
+//ramona>
+
 template<template<class > class Distance, typename PointInT, typename FeatureT>
 void
 pcl::rec_3d_framework::GlobalNNCRHRecognizer<Distance, PointInT, FeatureT>::getCentroid(ModelT & model, int view_id, int d_id,
@@ -80,7 +97,7 @@ pcl::rec_3d_framework::GlobalNNCRHRecognizer<Distance, PointInT, FeatureT>::getV
 
 }
 
-//create flann index used for nearest neighbour search
+//ramona: create flann index used for nearest neighbour search
 template<template<class > class Distance, typename PointInT, typename FeatureT>
 void
 pcl::rec_3d_framework::GlobalNNCRHRecognizer<Distance, PointInT, FeatureT>::loadFeaturesAndCreateFLANN()
@@ -147,7 +164,7 @@ pcl::rec_3d_framework::GlobalNNCRHRecognizer<Distance, PointInT, FeatureT>::load
 	flann_index_->buildIndex();
 }
 
-//perform nearest neighbour search
+//ramona: perform nearest neighbour search
 template<template<class > class Distance, typename PointInT, typename FeatureT>
 void
 pcl::rec_3d_framework::GlobalNNCRHRecognizer<Distance, PointInT, FeatureT>::nearestKSearch(flann::Index<DistT> * index, const flann_model &model,
@@ -167,13 +184,15 @@ template<template<class > class Distance, typename PointInT, typename FeatureT>
 void
 pcl::rec_3d_framework::GlobalNNCRHRecognizer<Distance, PointInT, FeatureT>::recognize()
 {
-	//initializing
+	//ramona: initializing
 	models_.reset(new std::vector<ModelT>);
 	transforms_.reset(new std::vector<Eigen::Matrix4f, Eigen::aligned_allocator<Eigen::Matrix4f> >);
+	//<ramona
 	icp_inlier_numbers_.reset(new std::vector<int>);
 	view_ids_.reset(new std::vector<int>);
-	results_.reset(new std::vector<std::tuple<int, int, Eigen::Matrix4f, typename pcl::PointCloud<PointInT>::Ptr, typename pcl::PointCloud<PointInT>::ConstPtr>>);
+	results_.reset(new std::vector<std::tuple<int, int, Eigen::Matrix4f, typename pcl::PointCloud<PointInT>::Ptr, typename pcl::PointCloud<PointInT>::ConstPtr, typename pcl::PointCloud<PointInT>::Ptr>>);
 	aligned_output_.reset(new std::vector<typename pcl::PointCloud<PointInT>::Ptr>);
+	//ramona>
 
 	PointInTPtr processed(new pcl::PointCloud<PointInT>);
 	PointInTPtr in(new pcl::PointCloud<PointInT>);
@@ -187,7 +206,7 @@ pcl::rec_3d_framework::GlobalNNCRHRecognizer<Distance, PointInT, FeatureT>::reco
 		in = input_;
 
 	{
-		//compute crh for oct point cloud
+		//ramona: compute crh for oct point cloud
 		pcl::ScopeTime t("Estimate feature");
 		crh_estimator_->estimate(in, processed, signatures, centroids);
 	}
@@ -233,6 +252,8 @@ pcl::rec_3d_framework::GlobalNNCRHRecognizer<Distance, PointInT, FeatureT>::reco
 
 			int num_n = std::min(NN_, static_cast<int> (indices_scores.size()));
 
+			//ramona: [commented code deleted]
+
 			if (do_CRH_)
 			{
 				/*
@@ -260,7 +281,7 @@ pcl::rec_3d_framework::GlobalNNCRHRecognizer<Distance, PointInT, FeatureT>::reco
 					Eigen::Vector3f view_centroid;
 					getCentroid(m, view_id, desc_id, view_centroid);
 
-					//crha.setModelAndInputView (view, processed);
+					//ramona: align models
 					crha.setInputAndTargetCentroids(view_centroid, input_centroid);
 					crha.align(*view_crh, *input_crh);
 
@@ -276,7 +297,9 @@ pcl::rec_3d_framework::GlobalNNCRHRecognizer<Distance, PointInT, FeatureT>::reco
 						Eigen::Matrix4f final_roll_trans(roll_transforms[k] * model_view_pose);
 						models_->push_back(m);
 						transforms_->push_back(final_roll_trans);
+						//<ramona
 						view_ids_->push_back(view_id);
+						//ramona>
 					}
 				}
 			}
@@ -301,7 +324,9 @@ pcl::rec_3d_framework::GlobalNNCRHRecognizer<Distance, PointInT, FeatureT>::reco
 			pcl::ScopeTime t("Pose refinement");
 
 			//Prepare scene and model clouds for the pose refinement step
-			float VOXEL_SIZE_ICP_ = 0.005f;
+			//<ramona
+			float VOXEL_SIZE_ICP_ = 0.03f;
+			//ramona>
 			PointInTPtr cloud_voxelized_icp(new pcl::PointCloud<PointInT>());
 			pcl::VoxelGrid<PointInT> voxel_grid_icp;
 			voxel_grid_icp.setInputCloud(processed);
@@ -309,6 +334,9 @@ pcl::rec_3d_framework::GlobalNNCRHRecognizer<Distance, PointInT, FeatureT>::reco
 			voxel_grid_icp.filter(*cloud_voxelized_icp);
 			source_->voxelizeAllModels(VOXEL_SIZE_ICP_);
 
+			//<ramona
+			std::vector<PointInTPtr> crha_output;
+			//ramona>
 #pragma omp parallel for num_threads(omp_get_num_procs())
 			for (int i = 0; i < static_cast<int> (models_->size()); i++)
 			{
@@ -317,40 +345,51 @@ pcl::rec_3d_framework::GlobalNNCRHRecognizer<Distance, PointInT, FeatureT>::reco
 				PointInTPtr model_aligned(new pcl::PointCloud<PointInT>);
 				pcl::transformPointCloud(*model_cloud, *model_aligned, transforms_->at(i));
 
+				//<ramona
+				crha_output.push_back(model_aligned);
+				//ramona>
+
 				pcl::IterativeClosestPoint<PointInT, PointInT> reg;
 				reg.setInputSource(model_aligned); //model
 				reg.setInputTarget(cloud_voxelized_icp); //scene
 				reg.setMaximumIterations(ICP_iterations_);
+				//<ramona
 				reg.setMaxCorrespondenceDistance(VOXEL_SIZE_ICP_ * 2.f);
+				//ramona>
 				reg.setTransformationEpsilon(1e-5);
 
 				typename pcl::PointCloud<PointInT>::Ptr output_(new pcl::PointCloud<PointInT>());
 				reg.align(*output_);
 
+				//<ramona
 				aligned_output_->push_back(output_);
-
 				icp_inlier_numbers_->push_back(reg.correspondences_->size());
+				//ramona>
+
 				Eigen::Matrix4f icp_trans = reg.getFinalTransformation();
 				transforms_->at(i) = icp_trans * transforms_->at(i);
 			}
+			//<ramona
 			//create tuple with all results for convenience so that they can be sorted easily by number of inliers from icp
 			for (int i = 0; i < icp_inlier_numbers_->size(); i++) {
-				std::tuple<int, int, Eigen::Matrix4f, typename pcl::PointCloud<PointInT>::Ptr, typename pcl::PointCloud<PointInT>::ConstPtr> result_tuple(view_ids_->at(i), icp_inlier_numbers_->at(i), transforms_->at(i), aligned_output_->at(i), models_->at(i).assembled_);
+				std::tuple<int, int, Eigen::Matrix4f, typename pcl::PointCloud<PointInT>::Ptr, typename pcl::PointCloud<PointInT>::ConstPtr, PointInTPtr> result_tuple(view_ids_->at(i), icp_inlier_numbers_->at(i), transforms_->at(i), aligned_output_->at(i), models_->at(i).assembled_, crha_output.at(i));
 				results_->push_back(result_tuple);
 			}
 			std::sort(results_->begin(), results_->end(),
-				[](std::tuple<int, int, Eigen::Matrix4f, typename pcl::PointCloud<PointInT>::Ptr, typename pcl::PointCloud<PointInT>::ConstPtr> const &t1, std::tuple<int, int, Eigen::Matrix4f, typename pcl::PointCloud<PointInT>::Ptr, typename pcl::PointCloud<PointInT>::ConstPtr> const &t2) {
+				[](std::tuple<int, int, Eigen::Matrix4f, typename pcl::PointCloud<PointInT>::Ptr, typename pcl::PointCloud<PointInT>::ConstPtr, PointInTPtr> const &t1, std::tuple<int, int, Eigen::Matrix4f, typename pcl::PointCloud<PointInT>::Ptr, typename pcl::PointCloud<PointInT>::ConstPtr, PointInTPtr> const &t2) {
 				return std::get<1>(t1) > std::get<1>(t2);
 			}
 			);
 			//print results in order
 			for (auto i = results_->begin(); i != results_->end(); ++i)
 				std::cout << "view id: " << std::get<0>(*i) << " inliers: " << std::get<1>(*i) << " transformation: " << std::get<2>(*i) << std::endl;
+			//ramona>
 		}
 	}
+	//ramona: [hypothesis verification deleted]
 }
 
-//compute descriptors etc. and save everything to disk
+//ramona: compute descriptors etc. and save everything to disk
 template<template<class > class Distance, typename PointInT, typename FeatureT>
 void
 pcl::rec_3d_framework::GlobalNNCRHRecognizer<Distance, PointInT, FeatureT>::initialize(bool force_retrain)
@@ -368,7 +407,7 @@ pcl::rec_3d_framework::GlobalNNCRHRecognizer<Distance, PointInT, FeatureT>::init
 			source_->removeDescDirectory(models->at(i), training_dir_, descr_name_);
 		}
 	}
-	//go through all created views
+	//ramona: go through all created views
 	for (size_t i = 0; i < models->size(); i++)
 	{
 		if (!source_->modelAlreadyTrained(models->at(i), training_dir_, descr_name_))

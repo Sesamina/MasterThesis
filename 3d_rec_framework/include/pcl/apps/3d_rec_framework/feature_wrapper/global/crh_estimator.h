@@ -11,6 +11,7 @@
 #include <pcl/apps/3d_rec_framework/feature_wrapper/global/global_estimator.h>
 #include <pcl/apps/3d_rec_framework/feature_wrapper/normal_estimator.h>
 #include <pcl/features/crh.h>
+#include <pcl/visualization/pcl_plotter.h>
 
 namespace pcl
 {
@@ -74,6 +75,12 @@ namespace pcl
           crh.setCentroid(centroid4f);
           crh_histograms_[idx].reset(new CRHPointCloud());
           crh.compute (*crh_histograms_[idx]);
+
+		  /*pcl::visualization::PCLPlotter plotter1;
+		  plotter1.setWindowName("cvfh oct");
+		  std::cout << signatures.size() << std::endl;
+		  plotter1.addFeatureHistogram(signatures[idx], 308);
+		  plotter1.plot();*/
         }
 
       }

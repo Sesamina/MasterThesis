@@ -131,6 +131,11 @@ namespace pcl
       void
       getCRH (ModelT & model, int view_id, int d_id, CRHPointCloud::Ptr & hist);
 
+	  //<ramona
+	  void 
+	  getCVFH(ModelT & model, int view_id, int d_id, boost::shared_ptr<pcl::PointCloud<FeatureT>> & hist);
+	  //ramona>
+
       void
       getCentroid (ModelT & model, int view_id, int d_id, Eigen::Vector3f & centroid);
 
@@ -141,10 +146,12 @@ namespace pcl
 
       boost::shared_ptr<std::vector<ModelT> > models_;
       boost::shared_ptr<std::vector<Eigen::Matrix4f, Eigen::aligned_allocator<Eigen::Matrix4f> > > transforms_;
+	  //<ramona
 	  boost::shared_ptr<std::vector<int>> icp_inlier_numbers_;
 	  boost::shared_ptr<std::vector<int>> view_ids_;
-	  boost::shared_ptr<std::vector<std::tuple<int, int, Eigen::Matrix4f, typename pcl::PointCloud<PointInT>::Ptr, typename pcl::PointCloud<PointInT>::ConstPtr>>> results_;
+	  boost::shared_ptr<std::vector<std::tuple<int, int, Eigen::Matrix4f, typename pcl::PointCloud<PointInT>::Ptr, typename pcl::PointCloud<PointInT>::ConstPtr, typename pcl::PointCloud<PointInT>::Ptr>>> results_;
 	  boost::shared_ptr<std::vector<typename pcl::PointCloud<PointInT>::Ptr>> aligned_output_;
+	  //ramona>
 
     public:
 
@@ -261,11 +268,13 @@ namespace pcl
        return transforms_;
       }
 
-	  boost::shared_ptr<std::vector<std::tuple<int, int, Eigen::Matrix4f, typename pcl::PointCloud<PointInT>::Ptr, typename pcl::PointCloud<PointInT>::ConstPtr>>>
-		  get_Id_Inliers_Transform_Output_Input()
+	  //<ramona
+	  boost::shared_ptr<std::vector<std::tuple<int, int, Eigen::Matrix4f, typename pcl::PointCloud<PointInT>::Ptr, typename pcl::PointCloud<PointInT>::ConstPtr, typename pcl::PointCloud<PointInT>::Ptr>>>
+		  get_Id_Inliers_Transform_Output_Input_Crha()
 	  {
 		  return results_;
 	  }
+	  //ramona>
 
       void
       setUseCache (bool u)

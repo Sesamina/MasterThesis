@@ -196,7 +196,7 @@ namespace pcl
             //generate views
             pcl::apps::RenderViewsTesselatedSphere render_views;
             render_views.setResolution (resolution_);
-            render_views.setUseVertices (false);
+            render_views.setUseVertices (true);
             render_views.setRadiusSphere (radius_sphere_);
             render_views.setComputeEntropies (true);
             render_views.setTesselationLevel (tes_level_);

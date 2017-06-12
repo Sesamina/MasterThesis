@@ -139,26 +139,31 @@ recognizeOCT(typename pcl::rec_3d_framework::GlobalNNCRHRecognizer<DistT, PointT
 	transforms = global.getTransforms();
 	//get the alignment results ordered by number of inliers from ICP 
 	//1) id of view, 2) number of inliers, 3) transformation matrix, 4) output (cad model with applied transformation matrix), 5) input (cad model)
-	boost::shared_ptr<std::vector<std::tuple<int, int, Eigen::Matrix4f, typename pcl::PointCloud<PointT>::Ptr, typename pcl::PointCloud<PointT>::ConstPtr>>> results;
-	results = global.get_Id_Inliers_Transform_Output_Input();
+	boost::shared_ptr<std::vector<std::tuple<int, int, Eigen::Matrix4f, typename pcl::PointCloud<PointT>::Ptr, typename pcl::PointCloud<PointT>::ConstPtr, typename pcl::PointCloud<PointT>::Ptr>>> results;
+	results = global.get_Id_Inliers_Transform_Output_Input_Crha();
 
 	//-----------------------------------
 	//show the computed point clouds
 	//-----------------------------------
-	boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer(new pcl::visualization::PCLVisualizer("3D Viewer"));
-	viewer->setBackgroundColor(0, 0, 0);
-	pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> rgb_handler(std::get<3>(results->at(0)), 0, 0, 255);
-	viewer->addPointCloud<pcl::PointXYZ>(std::get<3>(results->at(0)), rgb_handler, "sample cloud");
-	pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> rgb_handler3(point_cloud_ptr, 192, 192, 192);
-	viewer->addPointCloud<pcl::PointXYZ>(point_cloud_ptr, rgb_handler3, "sample cloud 3");
-	pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> rgb_handler2(std::get<4>(results->at(0)), 255, 0, 0);
-	viewer->addPointCloud<pcl::PointXYZ>(std::get<4>(results->at(0)), rgb_handler2, "sample cloud 2");
-	viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "sample cloud");
-	viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "sample cloud 2");
-	viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "sample cloud 3");
-	viewer->addCoordinateSystem(2.0);
-	viewer->initCameraParameters();
-	viewer->spin();
+	for (int i = 0; i < results->size(); i++) {
+		boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer(new pcl::visualization::PCLVisualizer("3D Viewer"));
+		viewer->setBackgroundColor(0, 0, 0);
+		pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> rgb_handler(std::get<3>(results->at(i)), 0, 0, 255);
+		viewer->addPointCloud<pcl::PointXYZ>(std::get<3>(results->at(i)), rgb_handler, "sample cloud");
+		pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> rgb_handler3(point_cloud_ptr, 192, 192, 192);
+		viewer->addPointCloud<pcl::PointXYZ>(point_cloud_ptr, rgb_handler3, "sample cloud 3");
+		pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> rgb_handler2(std::get<4>(results->at(i)), 255, 0, 0);
+		viewer->addPointCloud<pcl::PointXYZ>(std::get<4>(results->at(i)), rgb_handler2, "sample cloud 2");
+		pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> rgb_handler4(std::get<5>(results->at(i)), 0, 255, 0);
+		viewer->addPointCloud<pcl::PointXYZ>(std::get<5>(results->at(i)), rgb_handler4, "sample cloud 4");
+		viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "sample cloud");
+		viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "sample cloud 2");
+		viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "sample cloud 3");
+		viewer->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "sample cloud 4");
+		viewer->addCoordinateSystem(2.0);
+		viewer->initCameraParameters();
+		viewer->spin();
+	}
 }
 
 //bin/pcl_global_classification -models_dir /directory/of/cad/model/in/ply/format -descriptor_name cvfh -training_dir /directory/where/trained/models/should/be/saved -nn 10 -oct_dir /directory/to/oct/frames
@@ -191,8 +196,8 @@ main (int argc, char ** argv)
   mesh_source->setPath (path);
   mesh_source->setResolution (150);
   mesh_source->setTesselationLevel (1);
-  mesh_source->setViewAngle (57.f);
-  mesh_source->setRadiusSphere (1.5f);
+  mesh_source->setViewAngle (90.f);
+  mesh_source->setRadiusSphere (.5f);
   mesh_source->setModelScale (1.f);
   mesh_source->generate (training_dir);
 
@@ -206,8 +211,10 @@ main (int argc, char ** argv)
   normal_estimator.reset (new pcl::rec_3d_framework::PreProcessorAndNormalEstimator<pcl::PointXYZ, pcl::Normal>);
   normal_estimator->setCMR (true);
   normal_estimator->setDoVoxelGrid (true);
-  normal_estimator->setRemoveOutliers (true);
+  normal_estimator->setRemoveOutliers (false);
   normal_estimator->setFactorsForCMR (3, 7);
+  //leaf size 2cm, normals: use all neighbours in radius 30cm
+  normal_estimator->setValuesForCMRFalse(0.03, 0.3);
 
   if (desc_name.compare ("cvfh") == 0)
   {
@@ -239,7 +246,8 @@ main (int argc, char ** argv)
     global.setDescriptorName (desc_name);
     global.setFeatureEstimator (crh_estimator);
     global.setNN (NN);
-	global.setICPIterations(1);
+	global.setICPIterations(50);
+	global.setDOCRH(true);
 	//computes descriptors / loads them
     global.initialize (false);
 	
