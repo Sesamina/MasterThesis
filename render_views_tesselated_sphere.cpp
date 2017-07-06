@@ -486,16 +486,7 @@ pcl::apps::RenderViewsTesselatedSphere::generateViews() {
 
 		renderer->RemoveActor(actor_view);
 
-		//<ramona
-		float VOXEL_SIZE = 0.03f;
-		pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_voxelized(new pcl::PointCloud<pcl::PointXYZ>);
-		pcl::VoxelGrid<PointXYZ> voxel_grid;
-		voxel_grid.setInputCloud(cloud);
-		voxel_grid.setLeafSize(VOXEL_SIZE, VOXEL_SIZE, VOXEL_SIZE);
-		voxel_grid.filter(*cloud_voxelized);
-
-		generated_views_.push_back(cloud_voxelized);
-		//ramona>
+		generated_views_.push_back(cloud);
 
 		//create pose, from OBJECT coordinates to CAMERA coordinates!
 		vtkSmartPointer<vtkTransform> transOCtoCC = vtkSmartPointer<vtkTransform>::New();
