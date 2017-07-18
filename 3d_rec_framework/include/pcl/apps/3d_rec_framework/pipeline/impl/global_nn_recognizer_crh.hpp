@@ -321,7 +321,7 @@ pcl::rec_3d_framework::GlobalNNCRHRecognizer<Distance, PointInT, FeatureT>::reco
 
 		if (ICP_iterations_ > 0)
 		{
-			pcl::ScopeTime t("Pose refinement");
+			pcl::ScopeTime t("Pose refinement with ICP");
 
 			//Prepare scene and model clouds for the pose refinement step
 			//<ramona

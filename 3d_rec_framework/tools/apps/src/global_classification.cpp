@@ -24,6 +24,7 @@
 #include "pcl/apps/3d_rec_framework/utils/util.h"
 #include <mlpack/methods/linear_regression/linear_regression.hpp>
 #include <armadillo>
+#include <pcl/common/time.h>
 
 #include "opencv2\opencv.hpp"
 
@@ -183,37 +184,38 @@ recognizeOCT(typename pcl::rec_3d_framework::GlobalNNCRHRecognizer<DistT, PointT
 	pcl::PointCloud<pcl::PointXYZ>::Ptr point_cloud_ptr(new pcl::PointCloud<pcl::PointXYZ>);
 	boost::shared_ptr<std::vector<std::tuple<int, int, cv::Mat, cv::Mat>>> needle_width(new std::vector<std::tuple<int, int, cv::Mat, cv::Mat>>);
 	cv::Mat imageGray;
-
-	//	go through all frames
-	for (int number = minFrameNumber; number < maxFrameNumber; number++)
 	{
-		//get the next frame
-		std::stringstream filename;
-		if (number < 100) {
-			filename << "0";
+		pcl::ScopeTime t("Process OCT images");
+		//	go through all frames
+		for (int number = minFrameNumber; number < maxFrameNumber; number++)
+		{
+			//get the next frame
+			std::stringstream filename;
+			if (number < 100) {
+				filename << "0";
+			}
+			if (number < 10) {
+				filename << "0";
+			}
+			filename << number << ".bmp";
+			//read the image in grayscale
+			imageGray = cv::imread(oct_directory.c_str() + filename.str(), CV_LOAD_IMAGE_GRAYSCALE);
+
+			processOCTFrame(imageGray, number, point_cloud_ptr, needle_width);
+
+			cv::waitKey(10);
 		}
-		if (number < 10) {
-			filename << "0";
+		int end_index = needle_width->size();
+		//regression to find cutting point where tip ends
+		if (only_tip) {
+			end_index = regression(needle_width);
 		}
-		filename << number << ".bmp";
-		//read the image in grayscale
-		imageGray = cv::imread(oct_directory.c_str() + filename.str(), CV_LOAD_IMAGE_GRAYSCALE);
-
-		processOCTFrame(imageGray, number, point_cloud_ptr, needle_width);
-
-		cv::waitKey(10);
+		//go through all frames
+		for (int w = 0; w < end_index; w++) {
+			std::tuple<int, int, cv::Mat, cv::Mat> tup = needle_width->at(w);
+			MatToPoinXYZ(std::get<2>(tup), std::get<3>(tup), w, point_cloud_ptr, imageGray.rows, imageGray.cols);
+		}
 	}
-	int end_index = needle_width->size();
-	//regression to find cutting point where tip ends
-	if (only_tip) {
-		end_index = regression(needle_width);
-	}
-	//go through all frames
-	for (int w = 0; w < end_index; w++) {
-		std::tuple<int, int, cv::Mat, cv::Mat> tup = needle_width->at(w);
-		MatToPoinXYZ(std::get<2>(tup), std::get<3>(tup), w, point_cloud_ptr, imageGray.rows, imageGray.cols);
-	}
-
 
 	//set the oct cloud as input for the global crh pipeline
 	global.setInputCloud(point_cloud_ptr);
