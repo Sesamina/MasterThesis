@@ -202,7 +202,6 @@ recognizeOCT(typename pcl::rec_3d_framework::GlobalNNCRHRecognizer<DistT, PointT
 		processOCTFrame(imageGray, number, point_cloud_ptr, needle_width);
 
 		cv::waitKey(10);
-
 	}
 	int end_index = needle_width->size();
 	//regression to find cutting point where tip ends
@@ -259,7 +258,7 @@ recognizeOCT(typename pcl::rec_3d_framework::GlobalNNCRHRecognizer<DistT, PointT
 	std::cout << "result euler angles: " << result_euler_angles << std::endl;
 }
 
-//bin/pcl_global_classification -models_dir /directory/of/cad/model/in/ply/format -descriptor_name cvfh -training_dir /directory/where/trained/models/should/be/saved -nn 10 -oct_dir /directory/to/oct/frames
+//bin/pcl_global_classification -models_dir /directory/of/cad/model/in/ply/format -training_dir /directory/where/trained/models/should/be/saved -nn 10 -oct_dir /directory/to/oct/frames -only_tip 1
 
 int
 main(int argc, char ** argv)

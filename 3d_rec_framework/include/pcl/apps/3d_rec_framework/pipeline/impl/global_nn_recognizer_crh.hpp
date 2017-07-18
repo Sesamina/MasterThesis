@@ -336,6 +336,12 @@ pcl::rec_3d_framework::GlobalNNCRHRecognizer<Distance, PointInT, FeatureT>::reco
 
 			//<ramona
 			std::vector<PointInTPtr> crha_output;
+			//initialize vector to avoid error that it is smaller than the other vectors
+			//TODO: check if this is also needed for other vectors in loop
+			for (int h = 0; h < static_cast<int> (models_->size()); h++) {
+				PointInTPtr init(new pcl::PointCloud<PointInT>);
+				crha_output.push_back(init);
+			}
 			//ramona>
 #pragma omp parallel for num_threads(omp_get_num_procs())
 			for (int i = 0; i < static_cast<int> (models_->size()); i++)
@@ -346,7 +352,7 @@ pcl::rec_3d_framework::GlobalNNCRHRecognizer<Distance, PointInT, FeatureT>::reco
 				pcl::transformPointCloud(*model_cloud, *model_aligned, transforms_->at(i));
 
 				//<ramona
-				crha_output.push_back(model_aligned);
+				crha_output.at(i) = model_aligned;
 				//ramona>
 
 				pcl::IterativeClosestPoint<PointInT, PointInT> reg;
