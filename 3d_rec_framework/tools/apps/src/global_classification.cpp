@@ -172,7 +172,7 @@ void processOCTFrame(cv::Mat imageGray, int number, pcl::PointCloud<pcl::PointXY
 //-----------------------------------
 template<template<class > class DistT, typename PointT, typename FeatureT>
 void
-recognizeOCT(typename pcl::rec_3d_framework::GlobalNNCRHRecognizer<DistT, PointT, FeatureT> & global, std::string oct_dir) {
+recognizeOCT(typename pcl::rec_3d_framework::GlobalNNCRHRecognizer<DistT, PointT, FeatureT> & global, std::string oct_dir, bool only_tip) {
 
 	std::string oct_directory = getDirectoryPath(oct_dir);
 	//count oct images
@@ -204,10 +204,13 @@ recognizeOCT(typename pcl::rec_3d_framework::GlobalNNCRHRecognizer<DistT, PointT
 		cv::waitKey(10);
 
 	}
-	//regression TODO
-	int tangency_point_index = regression(needle_width);
-	//go through all frames of tip
-	for (int w = 0; w < needle_width->size()/*tangency_point_index*/; w++) {
+	int end_index = needle_width->size();
+	//regression to find cutting point where tip ends
+	if (only_tip) {
+		end_index = regression(needle_width);
+	}
+	//go through all frames
+	for (int w = 0; w < end_index; w++) {
 		std::tuple<int, int, cv::Mat, cv::Mat> tup = needle_width->at(w);
 		MatToPoinXYZ(std::get<2>(tup), std::get<3>(tup), w, point_cloud_ptr, imageGray.rows, imageGray.cols);
 	}
@@ -252,6 +255,7 @@ recognizeOCT(typename pcl::rec_3d_framework::GlobalNNCRHRecognizer<DistT, PointT
 	Eigen::Matrix4f result_transform(std::get<2>(results->at(0)));
 	Eigen::Matrix3f result_rotation_matrix(result_transform.block(0, 0, 3, 3));
 	Eigen::Vector3f result_euler_angles = result_rotation_matrix.eulerAngles(0, 1, 2);
+	result_euler_angles *= 180 / M_PI;
 	std::cout << "result euler angles: " << result_euler_angles << std::endl;
 }
 
@@ -267,13 +271,15 @@ main(int argc, char ** argv)
 	std::string desc_name = "cvfh";
 	std::string training_dir = "trained_models/";
 	std::string oct_dir = "oct/";
+	bool only_tip = false;
 	int NN = 1;
 
 	pcl::console::parse_argument(argc, argv, "-models_dir", path);
 	pcl::console::parse_argument(argc, argv, "-training_dir", training_dir);
-	pcl::console::parse_argument(argc, argv, "-descriptor_name", desc_name);
+	//pcl::console::parse_argument(argc, argv, "-descriptor_name", desc_name);
 	pcl::console::parse_argument(argc, argv, "-nn", NN);
 	pcl::console::parse_argument(argc, argv, "-oct_dir", oct_dir);
+	pcl::console::parse_argument(argc, argv, "-only_tip", only_tip);
 
 	//pcl::console::parse_argument (argc, argv, "-z_dist", chop_at_z_);
 	//pcl::console::parse_argument (argc, argv, "-tesselation_level", views_level_);
@@ -302,7 +308,7 @@ main(int argc, char ** argv)
 	normal_estimator->setDoVoxelGrid(true);
 	normal_estimator->setRemoveOutliers(false);
 	normal_estimator->setFactorsForCMR(3, 7);
-	//leaf size 2cm, normals: use all neighbours in radius 30cm
+	//leaf size 3cm, normals: use all neighbours in radius 30cm
 	normal_estimator->setValuesForCMRFalse(0.03, 0.3);
 
 	if (desc_name.compare("cvfh") == 0)
@@ -335,7 +341,7 @@ main(int argc, char ** argv)
 		global.setDescriptorName(desc_name);
 		global.setFeatureEstimator(crh_estimator);
 		global.setNN(NN);
-		global.setICPIterations(50);
+		global.setICPIterations(100);
 		global.setDOCRH(true);
 		//computes descriptors / loads them
 		global.initialize(false);
@@ -343,6 +349,6 @@ main(int argc, char ** argv)
 		//-------------------------------------
 		//process oct images, alignment, etc.
 		//-------------------------------------
-		recognizeOCT<Metrics::HistIntersectionUnionDistance, pcl::PointXYZ, pcl::VFHSignature308>(global, oct_dir);
+		recognizeOCT<Metrics::HistIntersectionUnionDistance, pcl::PointXYZ, pcl::VFHSignature308>(global, oct_dir, only_tip);
 	}
 }

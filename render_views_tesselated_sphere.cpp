@@ -117,7 +117,7 @@ pcl::apps::RenderViewsTesselatedSphere::generateViews() {
 	vtkSmartPointer<vtkRegularPolygonSource> polygonSource = vtkSmartPointer<vtkRegularPolygonSource>::New();
 
 	polygonSource->GeneratePolygonOff(); // Uncomment this line to generate only the outline of the circle
-	polygonSource->SetNumberOfSides(50);
+	polygonSource->SetNumberOfSides(96);
 	polygonSource->SetRadius(radius_sphere_);
 	polygonSource->SetCenter(0, 0, 0);
 	polygonSource->Update();
