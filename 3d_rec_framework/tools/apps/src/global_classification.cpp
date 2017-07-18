@@ -225,10 +225,19 @@ recognizeOCT(typename pcl::rec_3d_framework::GlobalNNCRHRecognizer<DistT, PointT
 	//get the transformation matrices
 	boost::shared_ptr<std::vector<Eigen::Matrix4f, Eigen::aligned_allocator<Eigen::Matrix4f> > > transforms;
 	transforms = global.getTransforms();
+
 	//get the alignment results ordered by number of inliers from ICP 
 	//1) id of view, 2) number of inliers, 3) transformation matrix, 4) output (cad model with applied transformation matrix), 5) input (cad model)
 	boost::shared_ptr<std::vector<std::tuple<int, int, Eigen::Matrix4f, typename pcl::PointCloud<PointT>::Ptr, typename pcl::PointCloud<PointT>::ConstPtr, typename pcl::PointCloud<PointT>::Ptr>>> results;
 	results = global.get_Id_Inliers_Transform_Output_Input_Crha();
+
+	//print the resulting transform of the best match
+	Eigen::Matrix4f result_transform(std::get<2>(results->at(0)));
+	Eigen::Matrix3f result_rotation_matrix(result_transform.block(0, 0, 3, 3));
+	Eigen::Vector3f result_euler_angles = result_rotation_matrix.eulerAngles(0, 1, 2);
+	result_euler_angles *= 180 / M_PI;
+	std::cout << "result euler angles: " << result_euler_angles << std::endl;
+	std::cout << "rotation around z axis: " << std::abs(result_euler_angles.z()) - 90 << std::endl;
 
 	//-----------------------------------
 	//show the computed point clouds
@@ -252,12 +261,6 @@ recognizeOCT(typename pcl::rec_3d_framework::GlobalNNCRHRecognizer<DistT, PointT
 		viewer->initCameraParameters();
 		viewer->spin();
 	}
-
-	Eigen::Matrix4f result_transform(std::get<2>(results->at(0)));
-	Eigen::Matrix3f result_rotation_matrix(result_transform.block(0, 0, 3, 3));
-	Eigen::Vector3f result_euler_angles = result_rotation_matrix.eulerAngles(0, 1, 2);
-	result_euler_angles *= 180 / M_PI;
-	std::cout << "result euler angles: " << result_euler_angles << std::endl;
 }
 
 //bin/pcl_global_classification -models_dir /directory/of/cad/model/in/ply/format -training_dir /directory/where/trained/models/should/be/saved -nn 10 -oct_dir /directory/to/oct/frames -only_tip 1
