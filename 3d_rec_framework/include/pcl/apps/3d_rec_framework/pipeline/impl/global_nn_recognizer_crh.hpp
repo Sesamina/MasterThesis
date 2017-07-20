@@ -370,6 +370,9 @@ pcl::rec_3d_framework::GlobalNNCRHRecognizer<Distance, PointInT, FeatureT>::reco
 				//<ramona
 				aligned_output_->push_back(output_);
 				icp_inlier_numbers_->push_back(reg.correspondences_->size());
+				if (reg.hasConverged()) {
+					std::cout << "ICP converged for model " << view_ids_->at(i) << "." << std::endl;
+				}
 				//ramona>
 
 				Eigen::Matrix4f icp_trans = reg.getFinalTransformation();
