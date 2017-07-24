@@ -151,7 +151,7 @@ Eigen::Vector3f computeNeedleTranslation(float tangencyPoint, Eigen::Vector3f po
 	}
 	Eigen::Vector3f translation = pointOnOCTCloud;
 	float dist = std::abs(pointOnOCTCloud.z() - tangencyPoint);
-	float mult = std::abs(dist / pointOnOCTCloud.z());
+	float mult = std::abs(dist / direction.z());
 	if (pointOnOCTCloud.z() < tangencyPoint) {
 		while (translation.z() < tangencyPoint) {
 			translation += direction * mult;
@@ -162,7 +162,7 @@ Eigen::Vector3f computeNeedleTranslation(float tangencyPoint, Eigen::Vector3f po
 			translation -= direction * mult;
 		}
 	}
-	translation -= (translation.z() / halfModelSize) * direction;
+	translation -= (halfModelSize / direction.z()) * direction;
 	return translation;
 }
 
@@ -283,11 +283,12 @@ main(int argc, char ** argv)
 		std::cout << "translation: " << std::endl << initialTranslation << std::endl;
 
 		//--------------TEST--------------
-		Eigen::Matrix3f dummyRotationZ;
-		float angle = -30 * M_PI / 180.0f;
+		/*Eigen::Matrix3f dummyRotationZ;
+		float angle = -15 * M_PI / 180.0f;
 		dummyRotationZ << std::cos(angle), -std::sin(angle), 0, std::sin(angle), std::cos(angle), 0, 0, 0, 1;
-		rotation *= dummyRotationZ;
+		rotation *= dummyRotationZ;*/
 		//--------------TEST--------------
+
 
 		//build transformation matrix
 		Eigen::Matrix4f transformation;
@@ -300,7 +301,7 @@ main(int argc, char ** argv)
 
 
 		pcl::PointCloud<pcl::PointXYZ>::Ptr modelTransformed(new pcl::PointCloud<pcl::PointXYZ>);
-		pcl::transformPointCloud(*modelCloud, *modelTransformed, transformation);
+		pcl::transformPointCloud(*model_voxelized, *modelTransformed, transformation);
 
 
 
