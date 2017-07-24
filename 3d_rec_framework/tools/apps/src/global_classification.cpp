@@ -265,36 +265,8 @@ main(int argc, char ** argv)
 		//process the CAD mdoel
 		//-------------------------------
 		pcl::PointCloud<pcl::PointXYZ>::Ptr modelCloud(new pcl::PointCloud<pcl::PointXYZ>);
-		//get models in directory
-		std::vector < std::string > files;
-		std::string start = "";
-		std::string ext = std::string("ply");
-		bf::path dir = path;
-		getModelsInDirectory(dir, start, files, ext);
-		std::stringstream model_path;
-		model_path << path << "/" << files[0];
-		std::string path_model = model_path.str();
-		//sample points on surface of model
-		pcl::rec_3d_framework::uniform_sampling(path_model, 100000, *modelCloud, 1.f);
-		//downsample points
-		float VOXEL_SIZE_ICP_ = 0.03f;
 		pcl::PointCloud<pcl::PointXYZ>::Ptr model_voxelized(new pcl::PointCloud<pcl::PointXYZ>());
-		pcl::VoxelGrid<pcl::PointXYZ> voxel_grid_icp;
-		voxel_grid_icp.setInputCloud(modelCloud);
-		voxel_grid_icp.setLeafSize(VOXEL_SIZE_ICP_, VOXEL_SIZE_ICP_, VOXEL_SIZE_ICP_);
-		voxel_grid_icp.filter(*model_voxelized);
-		float min = modelCloud->points.at(0).z; 
-		float max = modelCloud->points.at(0).z;
-		for (int i = 0; i < modelCloud->points.size(); i++) {
-			if (modelCloud->points.at(i).z < min) {
-				min = modelCloud->points.at(i).z;
-			}
-			else if (modelCloud->points.at(i).z > max) {
-				max = modelCloud->points.at(i).z;
-			}
-		}
-		float modelSize = std::abs(max - min);
-
+		generatePointCloudFromModel(modelCloud, model_voxelized, path);
 
 		//compute the 3d direction of the needle
 		std::pair<Eigen::Vector3f, Eigen::Vector3f> direction = computeNeedleDirection(peak_points);
@@ -307,9 +279,15 @@ main(int argc, char ** argv)
 		//compute 3d translation of the needle
 		float tangencyPoint = regression(needle_width) / (float)numFrames * 2.6f; //scaling
 		std::cout << "tangency point: " << tangencyPoint << std::endl;
-		//tip model 1.5 length - TODO: find way to get it from model
-		Eigen::Vector3f initialTranslation = computeNeedleTranslation(tangencyPoint, std::get<0>(direction), std::get<1>(direction), modelSize / 2);
+		Eigen::Vector3f initialTranslation = computeNeedleTranslation(tangencyPoint, std::get<0>(direction), std::get<1>(direction), getModelSize(modelCloud) / 2);
 		std::cout << "translation: " << std::endl << initialTranslation << std::endl;
+
+		//--------------TEST--------------
+		Eigen::Matrix3f dummyRotationZ;
+		float angle = -30 * M_PI / 180.0f;
+		dummyRotationZ << std::cos(angle), -std::sin(angle), 0, std::sin(angle), std::cos(angle), 0, 0, 0, 1;
+		rotation *= dummyRotationZ;
+		//--------------TEST--------------
 
 		//build transformation matrix
 		Eigen::Matrix4f transformation;
@@ -323,6 +301,8 @@ main(int argc, char ** argv)
 
 		pcl::PointCloud<pcl::PointXYZ>::Ptr modelTransformed(new pcl::PointCloud<pcl::PointXYZ>);
 		pcl::transformPointCloud(*modelCloud, *modelTransformed, transformation);
+
+
 
 		//--------------------------------
 		//visualization

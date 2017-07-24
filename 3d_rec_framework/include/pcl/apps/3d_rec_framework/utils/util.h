@@ -67,3 +67,46 @@ void getModelsInDirectory(bf::path & dir, std::string & rel_path_so_far, std::ve
 		}
 	}
 }
+
+void generatePointCloudFromModel(pcl::PointCloud<pcl::PointXYZ>::Ptr& modelCloud, pcl::PointCloud<pcl::PointXYZ>::Ptr& model_voxelized, std::string path) {
+	//get models in directory
+	std::vector < std::string > files;
+	std::string start = "";
+	std::string ext = std::string("ply");
+	bf::path dir = path;
+	getModelsInDirectory(dir, start, files, ext);
+	std::stringstream model_path;
+	model_path << path << "/" << files[0];
+	std::string path_model = model_path.str();
+	//sample points on surface of model
+	pcl::rec_3d_framework::uniform_sampling(path_model, 100000, *modelCloud, 1.f);
+	//downsample points
+	float VOXEL_SIZE_ICP_ = 0.03f;
+	pcl::VoxelGrid<pcl::PointXYZ> voxel_grid_icp;
+	voxel_grid_icp.setInputCloud(modelCloud);
+	voxel_grid_icp.setLeafSize(VOXEL_SIZE_ICP_, VOXEL_SIZE_ICP_, VOXEL_SIZE_ICP_);
+	voxel_grid_icp.filter(*model_voxelized);
+
+	Eigen::Matrix4f rotationZ;
+	rotationZ << 0, 1, 0, 0,
+		-1, 0, 0, 0,
+		0, 0, 1, 0,
+		0, 0, 0, 1;
+	pcl::transformPointCloud(*modelCloud, *modelCloud, rotationZ);
+	pcl::transformPointCloud(*model_voxelized, *model_voxelized, rotationZ);
+}
+
+float getModelSize(pcl::PointCloud<pcl::PointXYZ>::Ptr modelCloud) {
+	float min = modelCloud->points.at(0).z;
+	float max = modelCloud->points.at(0).z;
+	for (int i = 0; i < modelCloud->points.size(); i++) {
+		if (modelCloud->points.at(i).z < min) {
+			min = modelCloud->points.at(i).z;
+		}
+		else if (modelCloud->points.at(i).z > max) {
+			max = modelCloud->points.at(i).z;
+		}
+	}
+	float modelSize = std::abs(max - min);
+	return modelSize;
+}
