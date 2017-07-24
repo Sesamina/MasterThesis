@@ -7,6 +7,8 @@ cvfh_estimator.h
 	computation of clustered viewpoint feature histograms
 util.h
 	counting files in directory, processing of paths
+regression.h
+	all functions regarding regression, e.g. for fitting a line through points
 global_nn_recognizer_crh.h
 	header for crh pipeline
 global_nn_recognizer_crh.hpp
