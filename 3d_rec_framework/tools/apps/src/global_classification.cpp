@@ -24,6 +24,9 @@
 #include "pcl/apps/3d_rec_framework/utils/util.h"
 #include <mlpack/methods/linear_regression/linear_regression.hpp>
 #include <pcl/apps/3d_rec_framework/utils/vtk_model_sampling.h>
+#include <pcl/registration/correspondence_estimation.h>
+#include <pcl/registration/correspondence_rejection.h>
+#include <pcl/registration/default_convergence_criteria.h>
 
 #include <armadillo>
 
@@ -46,8 +49,8 @@ void MatToPointXYZ(cv::Mat& OpencVPointCloud, cv::Mat& labelInfo, int z, pcl::Po
 	int y = labelInfo.at<int>(0, cv::CC_STAT_TOP);
 	int labelWidth = labelInfo.at<int>(0, cv::CC_STAT_WIDTH);
 	int labelHeight = labelInfo.at<int>(0, cv::CC_STAT_HEIGHT);
-	//current peak point
-	pcl::PointXYZ peak_point(0, 0, 0);
+	//for using highest point as peak point
+	//pcl::PointXYZ peak_point(0, 0, 0);
 	//go through points in bounding box 
 	for (int i = x; i < x + labelWidth; i++) {
 		//indicate if first point with intensity = 1 in row has been found
@@ -70,12 +73,18 @@ void MatToPointXYZ(cv::Mat& OpencVPointCloud, cv::Mat& labelInfo, int z, pcl::Po
 			point.y = (float)lastPointPosition / height * 2.0f;
 			point.z = (float)z / numFrames * 2.6f;
 			point_cloud_ptr->points.push_back(point);
-			//smallest y value is the peak point
-			if (point.y > peak_point.y) {
+			//for using highest point as peak point
+			/*if (point.y < peak_point.y) {
 				peak_point = point;
-			}
+			}*/
 		}
 	}
+
+	//get peak point (middle of bounding box)
+	pcl::PointXYZ peak_point;
+	peak_point.x = (float)(x + (labelWidth / 2)) / width * 3.0f;
+	peak_point.y = (float)(y + labelHeight) / height * 2.0f;
+	peak_point.z = (float)z / numFrames * 2.6f;
 	peak_points->points.push_back(peak_point);
 }
 
@@ -163,7 +172,68 @@ Eigen::Vector3f computeNeedleTranslation(float tangencyPoint, Eigen::Vector3f po
 		}
 	}
 	translation -= (halfModelSize / direction.z()) * direction;
+
+	//subtract needle radius in y direction to get model to same hight as oct cloud
+	float needleDiameter = 0.31f;
+	translation(1, 0) -= needleDiameter / 2;
+
 	return translation;
+}
+
+//------------------------------------------------
+//rotate point cloud around z axis by given angle
+//------------------------------------------------
+Eigen::Matrix3f rotateByAngle(float angleInDegrees, Eigen::Matrix3f currentRotation) {
+	Eigen::Matrix3f rotationZ;
+	Eigen::Matrix3f finalRotation = currentRotation;
+	float angle = angleInDegrees * M_PI / 180.0f;
+	rotationZ << std::cos(angle), -std::sin(angle), 0, std::sin(angle), std::cos(angle), 0, 0, 0, 1;
+	finalRotation *= rotationZ;
+	return finalRotation;
+}
+
+//-----------------------------------------------------------------
+// build transformation matrix from given rotation and translation
+//-----------------------------------------------------------------
+Eigen::Matrix4f buildTransformationMatrix(Eigen::Matrix3f rotation, Eigen::Vector3f translation) {
+	Eigen::Matrix4f transformation;
+	transformation.block(0, 0, 3, 3) = rotation;
+	transformation.col(3).head(3) = translation;
+	transformation.row(3) << 0, 0, 0, 1;
+	return transformation;
+}
+
+//-----------------------------
+// compute correspondences
+//-----------------------------
+void computeCorrespondences(Eigen::Matrix4f& guess, pcl::PointCloud<pcl::PointXYZ>::Ptr input, pcl::PointCloud<pcl::PointXYZ>::Ptr target) {
+	// Point cloud containing the correspondences of each point in <input, indices>
+	pcl::PointCloud<pcl::PointXYZ>::Ptr input_transformed(new pcl::PointCloud<pcl::PointXYZ>);
+
+	// If the guessed transformation is non identity
+	if (guess != Eigen::Matrix4f::Identity())
+	{
+		input_transformed->resize(input->size());
+		// Apply passed transformation
+		pcl::transformPointCloud(*input, *input_transformed, guess);
+	}
+	else
+		*input_transformed = *input;
+
+	pcl::registration::CorrespondenceEstimation<pcl::PointXYZ, pcl::PointXYZ>::Ptr correspondence_estimation(new pcl::registration::CorrespondenceEstimation<pcl::PointXYZ, pcl::PointXYZ>);
+
+	// Pass in the default target for the Correspondence Estimation code
+	correspondence_estimation->setInputTarget(target);
+
+	// Set the source
+	correspondence_estimation->setInputSource(input_transformed);
+	boost::shared_ptr<pcl::Correspondences> correspondences(new pcl::Correspondences);
+	// Estimate correspondences ---------- maxDistance: VoxelSize * 2
+	correspondence_estimation->determineCorrespondences(*correspondences, 0.03f * 2.f);
+
+	//get number of correspondences
+	size_t cnt = correspondences->size();
+	std::cout << "correspondences: " << cnt << std::endl;
 }
 
 //-----------------------------------
@@ -217,6 +287,14 @@ recognizeOCT(pcl::PointCloud<pcl::PointXYZ>::Ptr& point_cloud_ptr, pcl::PointClo
 			MatToPointXYZ(std::get<2>(tup), std::get<3>(tup), w, point_cloud_ptr, peak_points, imageGray.rows, imageGray.cols);
 		}
 	}
+
+	//downsample pointcloud
+	float VOXEL_SIZE_ICP_ = 0.02f;
+	pcl::VoxelGrid<pcl::PointXYZ> voxel_grid_icp;
+	voxel_grid_icp.setInputCloud(point_cloud_ptr);
+	voxel_grid_icp.setLeafSize(VOXEL_SIZE_ICP_, VOXEL_SIZE_ICP_, VOXEL_SIZE_ICP_);
+	voxel_grid_icp.filter(*point_cloud_ptr);
+
 	return needle_width;
 }
 
@@ -257,7 +335,8 @@ main(int argc, char ** argv)
 	boost::shared_ptr<std::vector<std::tuple<int, int, cv::Mat, cv::Mat>>> needle_width = recognizeOCT(point_cloud_ptr, peak_points, oct_dir, only_tip);
 
 	//-------------------------------
-	//shifting algorithm - TODO: apply rotation of few degrees in every direction
+	//shifting algorithm - TODO: apply rotation of few degrees in every direction, 
+	//shift in needle direction and measure correspondences
 	//-------------------------------
 	if (shift) {
 
@@ -282,28 +361,20 @@ main(int argc, char ** argv)
 		Eigen::Vector3f initialTranslation = computeNeedleTranslation(tangencyPoint, std::get<0>(direction), std::get<1>(direction), getModelSize(modelCloud) / 2);
 		std::cout << "translation: " << std::endl << initialTranslation << std::endl;
 
-		//--------------TEST--------------
-		/*Eigen::Matrix3f dummyRotationZ;
-		float angle = -15 * M_PI / 180.0f;
-		dummyRotationZ << std::cos(angle), -std::sin(angle), 0, std::sin(angle), std::cos(angle), 0, 0, 0, 1;
-		rotation *= dummyRotationZ;*/
-		//--------------TEST--------------
 
-
-		//build transformation matrix
-		Eigen::Matrix4f transformation;
-		transformation.block(0, 0, 3, 3) = rotation;
-		transformation.col(3).head(3) = initialTranslation;
-		transformation.row(3) << 0, 0, 0, 1;
-		//subtract needle radius in y direction to get model to same hight as oct cloud
-		float needleDiameter = 0.31f;
-		transformation(1, 3) -= needleDiameter / 2;
-
+		Eigen::Matrix4f transformation = buildTransformationMatrix(rotation, initialTranslation);
 
 		pcl::PointCloud<pcl::PointXYZ>::Ptr modelTransformed(new pcl::PointCloud<pcl::PointXYZ>);
 		pcl::transformPointCloud(*model_voxelized, *modelTransformed, transformation);
 
-
+		for (float i = -90.0f; i < 90.0f; i += 5.0f) {
+			for (float j = -0.5f; j < 0.5; j += 0.1f) {
+				std::cout << "shift: " << j << " angle: " << i;
+				Eigen::Matrix3f rot = rotateByAngle((float)i, rotation);
+				Eigen::Matrix4f transform = buildTransformationMatrix(rot, initialTranslation);
+				computeCorrespondences(transform, model_voxelized, point_cloud_ptr);
+			}
+		}
 
 		//--------------------------------
 		//visualization
