@@ -110,3 +110,10 @@ float getModelSize(pcl::PointCloud<pcl::PointXYZ>::Ptr modelCloud) {
 	float modelSize = std::abs(max - min);
 	return modelSize;
 }
+
+auto findMaxIndexOfMap(std::vector<std::pair<float, float>> map) {
+	auto max_index = std::distance(map.begin(), std::max_element(map.begin(), map.end(),
+		[](const std::pair<float, float>& p1, const std::pair<float, float>& p2) {
+		return p1.second < p2.second; }));
+	return max_index;
+}

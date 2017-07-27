@@ -192,6 +192,15 @@ Eigen::Matrix3f rotateByAngle(float angleInDegrees, Eigen::Matrix3f currentRotat
 	return finalRotation;
 }
 
+//---------------------------------------------------------
+// compute translation given how much it should be shifted
+//---------------------------------------------------------
+Eigen::Vector3f shiftByValue(float shift, Eigen::Vector3f currentTranslation, Eigen::Vector3f direction) {
+	Eigen::Vector3f finalTranslation = currentTranslation;
+	finalTranslation += direction * (shift / direction.z());
+	return finalTranslation;
+}
+
 //-----------------------------------------------------------------
 // build transformation matrix from given rotation and translation
 //-----------------------------------------------------------------
@@ -206,7 +215,7 @@ Eigen::Matrix4f buildTransformationMatrix(Eigen::Matrix3f rotation, Eigen::Vecto
 //-----------------------------
 // compute correspondences
 //-----------------------------
-void computeCorrespondences(Eigen::Matrix4f& guess, pcl::PointCloud<pcl::PointXYZ>::Ptr input, pcl::PointCloud<pcl::PointXYZ>::Ptr target) {
+int computeCorrespondences(Eigen::Matrix4f& guess, pcl::PointCloud<pcl::PointXYZ>::Ptr input, pcl::PointCloud<pcl::PointXYZ>::Ptr target) {
 	// Point cloud containing the correspondences of each point in <input, indices>
 	pcl::PointCloud<pcl::PointXYZ>::Ptr input_transformed(new pcl::PointCloud<pcl::PointXYZ>);
 
@@ -233,7 +242,37 @@ void computeCorrespondences(Eigen::Matrix4f& guess, pcl::PointCloud<pcl::PointXY
 
 	//get number of correspondences
 	size_t cnt = correspondences->size();
-	std::cout << "correspondences: " << cnt << std::endl;
+	return (int)cnt;
+}
+
+//-----------------------------------
+//shifting/roll in defined intervals
+//-----------------------------------
+void shift_and_roll(float angle_min, float angle_max, float angle_step,
+	float shift_min, float shift_max, float shift_step,
+	std::vector<std::pair<float, float>>& angle_count, std::vector<std::pair<float, float>>& shift_and_count,
+	Eigen::Matrix3f rotation, Eigen::Vector3f initialTranslation, Eigen::Vector3f direction,
+	pcl::PointCloud<pcl::PointXYZ>::Ptr model_voxelized, pcl::PointCloud<pcl::PointXYZ>::Ptr point_cloud_ptr) {
+	for (float i = angle_min; i <= angle_max; i += angle_step) {
+		int angleCount = 0;
+		for (float j = shift_min; j <= shift_max; j += shift_step) {
+			Eigen::Matrix3f rot = rotateByAngle((float)i, rotation);
+			Eigen::Vector3f trans = shiftByValue((float)j, initialTranslation, direction);
+			Eigen::Matrix4f transform = buildTransformationMatrix(rot, trans);
+			int correspondence_count = computeCorrespondences(transform, model_voxelized, point_cloud_ptr);
+			std::vector<std::pair<float, float>>::iterator it;
+			it = std::find_if(shift_and_count.begin(), shift_and_count.end(), [j](const std::pair<float, float>& p1) {
+				return p1.first == j; });
+			if (it != shift_and_count.end()) {
+				shift_and_count.at(std::distance(shift_and_count.begin(), it)).second += correspondence_count;
+			}
+			else {
+				shift_and_count.push_back(std::pair<float, float>(j, correspondence_count));
+			}
+			angleCount += correspondence_count;
+		}
+		angle_count.push_back(std::pair<float, float>(i, angleCount));
+	}
 }
 
 //-----------------------------------
@@ -367,14 +406,59 @@ main(int argc, char ** argv)
 		pcl::PointCloud<pcl::PointXYZ>::Ptr modelTransformed(new pcl::PointCloud<pcl::PointXYZ>);
 		pcl::transformPointCloud(*model_voxelized, *modelTransformed, transformation);
 
-		for (float i = -90.0f; i < 90.0f; i += 5.0f) {
-			for (float j = -0.5f; j < 0.5; j += 0.1f) {
-				std::cout << "shift: " << j << " angle: " << i;
-				Eigen::Matrix3f rot = rotateByAngle((float)i, rotation);
-				Eigen::Matrix4f transform = buildTransformationMatrix(rot, initialTranslation);
-				computeCorrespondences(transform, model_voxelized, point_cloud_ptr);
+		std::vector<std::pair<float, float>> angle_count;
+		std::vector<std::pair<float, float>> shift_count;
+
+		//apply shift and roll in small steps in given intervals and compute correspondences
+		shift_and_roll(-90.0f, 90.0f, 5.0f, -0.2f, 0.2f, 0.05f, angle_count, shift_count, rotation, initialTranslation, std::get<1>(direction), model_voxelized, point_cloud_ptr);
+
+		//find index of maximum correspondences
+		int max_index_angles = findMaxIndexOfMap(angle_count);
+		int max_index_shift = findMaxIndexOfMap(shift_count);
+
+		//check bounds of vectors to make sure that in both directions of max indices you can go as far as specified
+		int angle_min = 2;
+		if (!(max_index_angles > 1)) {
+			angle_min--;
+			if (!(max_index_angles > 0)) {
+				angle_min--;
 			}
 		}
+		int angle_max = 2;
+		if (!(max_index_angles < (angle_count.size() - 2))) {
+			angle_max--;
+			if (!(max_index_angles < (angle_count.size() - 1))) {
+				angle_max--;
+			}
+		}
+		int shift_min = 2;
+		if (!(max_index_shift > 1)) {
+			shift_min--;
+			if (!(max_index_shift > 0)) {
+				shift_min--;
+			}
+		}
+		int shift_max = 2;
+		if (!(max_index_shift < (shift_count.size() - 2))) {
+			shift_max--;
+			if (!(max_index_shift < (shift_count.size() - 1))) {
+				shift_max--;
+			}
+		}
+		//second time shifting in improved intervals
+		std::vector<std::pair<float, float>> angle_count2;
+		std::vector<std::pair<float, float>> shift_count2;
+
+		shift_and_roll(angle_count.at(max_index_angles-angle_min).first, angle_count.at(max_index_angles+angle_max).first, 1.0f,
+			shift_count.at(max_index_shift-shift_min).first, shift_count.at(max_index_shift+shift_max).first, 0.01f,
+			angle_count2, shift_count2, rotation, initialTranslation, std::get<1>(direction), model_voxelized, point_cloud_ptr);
+
+		max_index_angles = findMaxIndexOfMap(angle_count2);
+		max_index_shift = findMaxIndexOfMap(shift_count2);
+
+		//transform point cloud to currently best values
+		transformation = buildTransformationMatrix(rotateByAngle(angle_count2.at(max_index_angles).first, rotation), shiftByValue(shift_count2.at(max_index_shift).first, initialTranslation, std::get<1>(direction)));
+		pcl::transformPointCloud(*model_voxelized, *modelTransformed, transformation);
 
 		//--------------------------------
 		//visualization
