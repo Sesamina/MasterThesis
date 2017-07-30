@@ -400,65 +400,60 @@ main(int argc, char ** argv)
 		Eigen::Vector3f initialTranslation = computeNeedleTranslation(tangencyPoint, std::get<0>(direction), std::get<1>(direction), getModelSize(modelCloud) / 2);
 		std::cout << "translation: " << std::endl << initialTranslation << std::endl;
 
-
+		//build the transformation matrix with currently computed rotation and translation
 		Eigen::Matrix4f transformation = buildTransformationMatrix(rotation, initialTranslation);
-
-		pcl::PointCloud<pcl::PointXYZ>::Ptr modelTransformed(new pcl::PointCloud<pcl::PointXYZ>);
-		pcl::transformPointCloud(*model_voxelized, *modelTransformed, transformation);
 
 		std::vector<std::pair<float, float>> angle_count;
 		std::vector<std::pair<float, float>> shift_count;
 
-		//apply shift and roll in small steps in given intervals and compute correspondences
-		shift_and_roll(-90.0f, 90.0f, 5.0f, -0.2f, 0.2f, 0.05f, angle_count, shift_count, rotation, initialTranslation, std::get<1>(direction), model_voxelized, point_cloud_ptr);
+		//initialize interval values
+		float angleStart = -90.0f;
+		float angleEnd = 90.0f;
+		float angleStep = 5.0f;
+		float shiftStart = -0.2f;
+		float shiftEnd = 0.2f;
+		float shiftStep = 0.05f;
+		int max_index_angles = 0;
+		int max_index_shift = 0;
 
-		//find index of maximum correspondences
-		int max_index_angles = findMaxIndexOfMap(angle_count);
-		int max_index_shift = findMaxIndexOfMap(shift_count);
+		int NUM_STEPS = 2;
+		{
+			pcl::ScopeTime t("Shift and Roll");
+			for (int i = 0; i < 3; i++) {
+				angle_count.clear();
+				shift_count.clear();
+				//apply shift and roll in small steps in given intervals and compute correspondences
+				shift_and_roll(angleStart, angleEnd, angleStep, shiftStart, shiftEnd, shiftStep, angle_count, shift_count, rotation, initialTranslation, std::get<1>(direction), model_voxelized, point_cloud_ptr);
+				//find index of maximum correspondences
+				max_index_angles = findMaxIndexOfMap(angle_count);
+				max_index_shift = findMaxIndexOfMap(shift_count);
 
-		//check bounds of vectors to make sure that in both directions of max indices you can go as far as specified
-		int angle_min = 2;
-		if (!(max_index_angles > 1)) {
-			angle_min--;
-			if (!(max_index_angles > 0)) {
-				angle_min--;
+				//check bounds of vectors to make sure that in both directions of max indices you can go as far as specified
+				int angle_min = checkMinBounds(NUM_STEPS, max_index_angles);
+				int angle_max = checkMaxBounds(NUM_STEPS, max_index_angles, angle_count.size());
+				int shift_min = checkMinBounds(NUM_STEPS, max_index_shift);
+				int shift_max = checkMaxBounds(NUM_STEPS, max_index_shift, shift_count.size());
+
+				//assign new interval values
+				angleStart = angle_count.at(max_index_angles - angle_min).first;
+				angleEnd = angle_count.at(max_index_angles + angle_max).first;
+				angleStep /= 5.0f;
+				shiftStart = shift_count.at(max_index_shift - shift_min).first;
+				shiftEnd = shift_count.at(max_index_shift + shift_max).first;
+				shiftStep /= 5.0f;
+				std::cout << "end of round: " << i << std::endl;
 			}
 		}
-		int angle_max = 2;
-		if (!(max_index_angles < (angle_count.size() - 2))) {
-			angle_max--;
-			if (!(max_index_angles < (angle_count.size() - 1))) {
-				angle_max--;
-			}
-		}
-		int shift_min = 2;
-		if (!(max_index_shift > 1)) {
-			shift_min--;
-			if (!(max_index_shift > 0)) {
-				shift_min--;
-			}
-		}
-		int shift_max = 2;
-		if (!(max_index_shift < (shift_count.size() - 2))) {
-			shift_max--;
-			if (!(max_index_shift < (shift_count.size() - 1))) {
-				shift_max--;
-			}
-		}
-		//second time shifting in improved intervals
-		std::vector<std::pair<float, float>> angle_count2;
-		std::vector<std::pair<float, float>> shift_count2;
-
-		shift_and_roll(angle_count.at(max_index_angles-angle_min).first, angle_count.at(max_index_angles+angle_max).first, 1.0f,
-			shift_count.at(max_index_shift-shift_min).first, shift_count.at(max_index_shift+shift_max).first, 0.01f,
-			angle_count2, shift_count2, rotation, initialTranslation, std::get<1>(direction), model_voxelized, point_cloud_ptr);
-
-		max_index_angles = findMaxIndexOfMap(angle_count2);
-		max_index_shift = findMaxIndexOfMap(shift_count2);
 
 		//transform point cloud to currently best values
-		transformation = buildTransformationMatrix(rotateByAngle(angle_count2.at(max_index_angles).first, rotation), shiftByValue(shift_count2.at(max_index_shift).first, initialTranslation, std::get<1>(direction)));
+		pcl::PointCloud<pcl::PointXYZ>::Ptr modelTransformed(new pcl::PointCloud<pcl::PointXYZ>);
+		transformation = buildTransformationMatrix(rotateByAngle(angle_count.at(max_index_angles).first, rotation), shiftByValue(shift_count.at(max_index_shift).first, initialTranslation, std::get<1>(direction)));
 		pcl::transformPointCloud(*model_voxelized, *modelTransformed, transformation);
+
+		Eigen::Matrix3f end_rot = transformation.block(0, 0, 3, 3);
+		Eigen::Vector3f eulerAngles = end_rot.eulerAngles(0, 1, 2);
+		eulerAngles *= 180 / M_PI;
+		std::cout << eulerAngles << std::endl;
 
 		//--------------------------------
 		//visualization

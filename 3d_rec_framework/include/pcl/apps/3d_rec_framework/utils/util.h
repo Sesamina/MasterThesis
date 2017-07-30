@@ -16,7 +16,7 @@ std::string getDirectoryPath(std::string path) {
 }
 
 
-
+//count the number of files in a directory with a given ending
 int countNumberOfFilesInDirectory(std::string inputDirectory, const char* fileExtension) {
 	char search_path[300];
 	WIN32_FIND_DATA fd;
@@ -41,6 +41,7 @@ int countNumberOfFilesInDirectory(std::string inputDirectory, const char* fileEx
 	return count;
 }
 
+//get the path to all models in a directory
 void getModelsInDirectory(bf::path & dir, std::string & rel_path_so_far, std::vector<std::string> & relative_paths, std::string & ext) {
 	bf::directory_iterator end_itr;
 	for (bf::directory_iterator itr(dir); itr != end_itr; ++itr) {
@@ -68,6 +69,7 @@ void getModelsInDirectory(bf::path & dir, std::string & rel_path_so_far, std::ve
 	}
 }
 
+//generate a point cloud from a ply file
 void generatePointCloudFromModel(pcl::PointCloud<pcl::PointXYZ>::Ptr& modelCloud, pcl::PointCloud<pcl::PointXYZ>::Ptr& model_voxelized, std::string path) {
 	//get models in directory
 	std::vector < std::string > files;
@@ -96,6 +98,7 @@ void generatePointCloudFromModel(pcl::PointCloud<pcl::PointXYZ>::Ptr& modelCloud
 	pcl::transformPointCloud(*model_voxelized, *model_voxelized, rotationZ);
 }
 
+//get the model size in z direction
 float getModelSize(pcl::PointCloud<pcl::PointXYZ>::Ptr modelCloud) {
 	float min = modelCloud->points.at(0).z;
 	float max = modelCloud->points.at(0).z;
@@ -111,9 +114,32 @@ float getModelSize(pcl::PointCloud<pcl::PointXYZ>::Ptr modelCloud) {
 	return modelSize;
 }
 
+//find the index of the pair with maximal value
 auto findMaxIndexOfMap(std::vector<std::pair<float, float>> map) {
 	auto max_index = std::distance(map.begin(), std::max_element(map.begin(), map.end(),
 		[](const std::pair<float, float>& p1, const std::pair<float, float>& p2) {
 		return p1.second < p2.second; }));
 	return max_index;
+}
+
+//check for a given index if it is possible to go a given number of steps in both directions or if it would be out of bounds
+int checkMinBounds(int steps, int index_in_vector) {
+	int angle_min = steps;
+	if (!(index_in_vector > 1)) {
+		angle_min--;
+		if (!(index_in_vector > 0)) {
+			angle_min--;
+		}
+	}
+	return angle_min;
+}
+int checkMaxBounds(int steps, int index_in_vector, int vector_size) {
+	int angle_max = steps;
+	if (!(index_in_vector < (vector_size - 2))) {
+		angle_max--;
+		if (!(index_in_vector < (vector_size - 1))) {
+			angle_max--;
+		}
+	}
+	return angle_max;
 }
