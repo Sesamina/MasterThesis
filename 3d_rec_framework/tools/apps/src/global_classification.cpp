@@ -27,6 +27,10 @@
 #include <pcl/registration/correspondence_estimation.h>
 #include <pcl/registration/correspondence_rejection.h>
 #include <pcl/registration/default_convergence_criteria.h>
+#include <pcl/registration/correspondence_rejection_distance.h>
+#include <pcl/registration/correspondence_rejection_median_distance.h>
+#include <pcl/registration/correspondence_rejection_one_to_one.h>
+#include <pcl/registration/correspondence_rejection_sample_consensus.h>
 
 #include <armadillo>
 
@@ -230,7 +234,6 @@ int computeCorrespondences(Eigen::Matrix4f& guess, pcl::PointCloud<pcl::PointXYZ
 		*input_transformed = *input;
 
 	pcl::registration::CorrespondenceEstimation<pcl::PointXYZ, pcl::PointXYZ>::Ptr correspondence_estimation(new pcl::registration::CorrespondenceEstimation<pcl::PointXYZ, pcl::PointXYZ>);
-
 	// Pass in the default target for the Correspondence Estimation code
 	correspondence_estimation->setInputTarget(target);
 
@@ -238,7 +241,25 @@ int computeCorrespondences(Eigen::Matrix4f& guess, pcl::PointCloud<pcl::PointXYZ
 	correspondence_estimation->setInputSource(input_transformed);
 	boost::shared_ptr<pcl::Correspondences> correspondences(new pcl::Correspondences);
 	// Estimate correspondences ---------- maxDistance: VoxelSize * 2
-	correspondence_estimation->determineCorrespondences(*correspondences, 0.03f * 2.f);
+	 /*#1)*/ correspondence_estimation->determineCorrespondences(*correspondences, 0.03f * 2.f);
+	// /*#2)*/ correspondence_estimation->determineReciprocalCorrespondences(*correspondences, 0.03f * 2.f);
+	boost::shared_ptr<pcl::Correspondences> temp_correspondences(new pcl::Correspondences(*correspondences));
+	/*#3)#4)*/ /*pcl::registration::CorrespondenceRejectorDistance::Ptr rejector_distance(new pcl::registration::CorrespondenceRejectorDistance);
+	rejector_distance->setInputCorrespondences(temp_correspondences);
+	rejector_distance->setMaximumDistance(0.03f);
+	rejector_distance->getCorrespondences(*correspondences);*/
+	/*#5)#6)*/ /*pcl::registration::CorrespondenceRejectorMedianDistance::Ptr rejector_median(new pcl::registration::CorrespondenceRejectorMedianDistance);
+	rejector_median->setInputCorrespondences(temp_correspondences);
+	rejector_median->getCorrespondences(*correspondences);*/
+	/*#7)#8)*//*pcl::registration::CorrespondenceRejectorOneToOne::Ptr rejector_oneToOne(new pcl::registration::CorrespondenceRejectorOneToOne);
+	rejector_oneToOne->setInputCorrespondences(temp_correspondences);
+	rejector_oneToOne->getCorrespondences(*correspondences);*/
+
+	/*#9)#10)*//*pcl::registration::CorrespondenceRejectorSampleConsensus<pcl::PointXYZ>::Ptr rejector_sampleConsensus(new pcl::registration::CorrespondenceRejectorSampleConsensus<pcl::PointXYZ>);
+	rejector_sampleConsensus->setInputCorrespondences(temp_correspondences);
+	rejector_sampleConsensus->setInputSource(input);
+	rejector_sampleConsensus->setInputTarget(target);
+	rejector_sampleConsensus->getCorrespondences(*correspondences);*/
 
 	//get number of correspondences
 	size_t cnt = correspondences->size();
@@ -386,6 +407,10 @@ main(int argc, char ** argv)
 		pcl::PointCloud<pcl::PointXYZ>::Ptr model_voxelized(new pcl::PointCloud<pcl::PointXYZ>());
 		generatePointCloudFromModel(modelCloud, model_voxelized, path);
 
+
+		//--------------------------------------
+		//compute initial translation/rotation
+		//--------------------------------------
 		//compute the 3d direction of the needle
 		std::pair<Eigen::Vector3f, Eigen::Vector3f> direction = computeNeedleDirection(peak_points);
 		std::cout << "origin: " << std::endl << std::get<0>(direction) << std::endl << "direction: " << std::endl << std::get<1>(direction) << std::endl;
@@ -393,6 +418,10 @@ main(int argc, char ** argv)
 		//compute the 3d rotation of the needle
 		Eigen::Matrix3f rotation = computeNeedleRotation(direction);
 		std::cout << "rotation matrix: " << std::endl << rotation << std::endl;
+		//rotate back to 0 degree on z axis
+		Eigen::Vector3f euler = rotation.eulerAngles(0, 1, 2) * 180 / M_PI;
+		rotation = rotateByAngle(180 - euler.z(), rotation);
+		std::cout << "euler angles: " << std::endl << rotation.eulerAngles(0, 1, 2) * 180 / M_PI << std::endl;
 
 		//compute 3d translation of the needle
 		float tangencyPoint = regression(needle_width) / (float)numFrames * 2.6f; //scaling
@@ -406,6 +435,9 @@ main(int argc, char ** argv)
 		std::vector<std::pair<float, float>> angle_count;
 		std::vector<std::pair<float, float>> shift_count;
 
+		//--------------------------------------
+		//start of shifting algorithm
+		//--------------------------------------
 		//initialize interval values
 		float angleStart = -90.0f;
 		float angleEnd = 90.0f;
@@ -419,7 +451,7 @@ main(int argc, char ** argv)
 		int NUM_STEPS = 2;
 		{
 			pcl::ScopeTime t("Shift and Roll");
-			for (int i = 0; i < 3; i++) {
+			for (int i = 0; i < 4; i++) {
 				angle_count.clear();
 				shift_count.clear();
 				//apply shift and roll in small steps in given intervals and compute correspondences
@@ -441,6 +473,8 @@ main(int argc, char ** argv)
 				shiftStart = shift_count.at(max_index_shift - shift_min).first;
 				shiftEnd = shift_count.at(max_index_shift + shift_max).first;
 				shiftStep /= 5.0f;
+				std::cout << "angle: " << angle_count.at(max_index_angles).first << std::endl;
+				std::cout << "shift: " << shift_count.at(max_index_shift).first << std::endl;
 				std::cout << "end of round: " << i << std::endl;
 			}
 		}
