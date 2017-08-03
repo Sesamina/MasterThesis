@@ -31,6 +31,7 @@
 #include <pcl/registration/correspondence_rejection_median_distance.h>
 #include <pcl/registration/correspondence_rejection_one_to_one.h>
 #include <pcl/registration/correspondence_rejection_sample_consensus.h>
+#include <pcl/registration/distances.h>
 
 #include <armadillo>
 
@@ -260,6 +261,26 @@ int computeCorrespondences(Eigen::Matrix4f& guess, pcl::PointCloud<pcl::PointXYZ
 	rejector_sampleConsensus->setInputSource(input);
 	rejector_sampleConsensus->setInputTarget(target);
 	rejector_sampleConsensus->getCorrespondences(*correspondences);*/
+
+	//float manhattan_sum = 0.0f;
+	////Manhattan distance L1
+	//for (auto& n : *correspondences) {
+	//	manhattan_sum += n.distance;
+	//}
+	//manhattan_sum /= correspondences->size();
+	//double l1_sum = 0.0f;
+	//double l2_sum = 0.0f;
+	//double l2Sqr_sum = 0.0f;
+	//for (auto& n : *correspondences) {
+	//	Eigen::Vector4f query(input_transformed->points.at(n.index_query).x, input_transformed->points.at(n.index_query).y, input_transformed->points.at(n.index_query).z, 0.0f);
+	//	Eigen::Vector4f match(target->points.at(n.index_match).x, target->points.at(n.index_match).y, target->points.at(n.index_match).z, 0.0f);
+	//	l1_sum += pcl::distances::l1(query, match);
+	//	l2_sum += pcl::distances::l2(query, match);
+	//	l2Sqr_sum += pcl::distances::l2Sqr(query, match);
+	//}
+	//l1_sum /= correspondences->size();
+	//l2_sum /= correspondences->size();
+	//l2Sqr_sum /= correspondences->size();
 
 	//get number of correspondences
 	size_t cnt = correspondences->size();
