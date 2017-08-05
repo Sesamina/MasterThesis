@@ -41,6 +41,8 @@
 
 #include "opencv2\opencv.hpp"
 
+#include "pcl/apps/3d_rec_framework/utils/graphUtils/GraphUtils.h"
+
  //fixed number of OCT images
 int numFrames = 128;
 
@@ -299,6 +301,8 @@ void shift_and_roll(float angle_min, float angle_max, float angle_step,
 	std::vector<std::pair<float, float>>& angle_count, std::vector<std::pair<float, float>>& shift_and_count,
 	Eigen::Matrix3f rotation, Eigen::Vector3f initialTranslation, Eigen::Vector3f direction,
 	pcl::PointCloud<pcl::PointXYZ>::Ptr model_voxelized, pcl::PointCloud<pcl::PointXYZ>::Ptr point_cloud_ptr, bool use_error) {
+	int angle_max_index = 0;
+	int angle_index = 0;
 	for (float i = angle_min; i <= angle_max; i += angle_step) {
 		float angleCount = 0.0f;
 		for (float j = shift_min; j <= shift_max; j += shift_step) {
@@ -317,7 +321,19 @@ void shift_and_roll(float angle_min, float angle_max, float angle_step,
 			}
 			angleCount += correspondence_count;
 		}
+		//----------------------------------
+		//algorithm performance improvement
+		//if correspondence number didn't grow for 5 angles, stop everything because it won't get better
+		if (angle_max_index + ((std::abs(angle_min) + std::abs(angle_max)) / angle_step) / 4 == angle_index) {
+			break;
+		}
+		//a better value than the current one was found, save the new index of the maximum value
+		if (angle_index > angle_max_index && angleCount > angle_count.at(angle_max_index).second) {
+			angle_max_index = angle_index;
+		}
+		//----------------------------------
 		angle_count.push_back(std::pair<float, float>(i, angleCount));
+		angle_index++;
 	}
 }
 
@@ -471,8 +487,8 @@ main(int argc, char ** argv)
 		float angleStart = -90.0f;
 		float angleEnd = 90.0f;
 		float angleStep = 1.0f;
-		float shiftStart = 0.0f;
-		float shiftEnd = 0.4f;
+		float shiftStart = -0.2f;
+		float shiftEnd = 0.2f;
 		float shiftStep = 0.05f;
 		int max_index_angles = 0;
 		int max_index_shift = 0;
@@ -506,6 +522,18 @@ main(int argc, char ** argv)
 				std::cout << "angle: " << angle_count.at(max_index_angles).first << std::endl;
 				std::cout << "shift: " << shift_count.at(max_index_shift).first << std::endl;
 				std::cout << "end of round: " << i << std::endl;
+
+				//show correspondence count as graph
+				/*std::vector<float> angle_corr;
+				for (int j = 0; j < angle_count.size(); j++) {
+					angle_corr.push_back(angle_count.at(j).second);
+				}
+				showFloatGraph("Angle Correspondences", &angle_corr[0], angle_corr.size(), 0);
+				std::vector<float> shift_corr;
+				for (int j = 0; j < shift_count.size(); j++) {
+					shift_corr.push_back(shift_count.at(j).second);
+				}
+				showFloatGraph("Shift Correspondences", &shift_corr[0], shift_corr.size(), 0);*/
 
 				use_error = true;
 			}
