@@ -98,6 +98,30 @@ void generatePointCloudFromModel(pcl::PointCloud<pcl::PointXYZ>::Ptr& modelCloud
 	pcl::transformPointCloud(*model_voxelized, *model_voxelized, rotationZ);
 }
 
+//cut the model in half in given direction
+void cutModelinHalf(pcl::PointCloud<pcl::PointXYZ>::Ptr& modelCloud, pcl::PointCloud<pcl::PointXYZ>::Ptr& result, int axis) {
+	Eigen::Vector4f centroid;
+	pcl::compute3DCentroid(*modelCloud, centroid);
+	for (int i = 0; i < modelCloud->points.size(); i++) {
+		pcl::PointXYZ point = modelCloud->points.at(i);
+		if (axis == 0) {
+			if (point.x <= centroid.x()) {
+				result->push_back(point);
+			}
+		}
+		else if (axis == 1) {
+			if (point.y >= centroid.y()) {
+				result->push_back(point);
+			}
+		}
+		else if (axis == 2) {
+			if (point.z < centroid.z()) {
+				result->push_back(point);
+			}
+		}
+	}
+}
+
 //get the model size in z direction
 float getModelSize(pcl::PointCloud<pcl::PointXYZ>::Ptr modelCloud) {
 	float min = modelCloud->points.at(0).z;
