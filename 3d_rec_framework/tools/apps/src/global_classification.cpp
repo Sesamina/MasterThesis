@@ -46,6 +46,15 @@
  //fixed number of OCT images
 int numFrames = 128;
 
+//-------------------------------------
+//helper method to generate a PointXYZ
+//-------------------------------------
+void generatePoint(pcl::PointXYZ& point, float x, float y, float z, float width, float height) {
+	point.x = (float)x / width * 2.7f;
+	point.y = (float)y / height * 2.4f;
+	point.z = (float)z / numFrames * 3.0f;
+}
+
 //------------------------------------------------------------
 //convert labelled image (opencv matrix) to points for cloud
 //------------------------------------------------------------
@@ -76,22 +85,14 @@ void MatToPointXYZ(cv::Mat& OpencVPointCloud, cv::Mat& labelInfo, int z, pcl::Po
 		if (!firstNotFound) {
 			//add the last point with intensity = 1 in row to the point cloud
 			pcl::PointXYZ point;
-			point.x = (float)i / width * 2.7f;
-			point.y = (float)lastPointPosition / height * 2.4f;
-			point.z = (float)z / numFrames * 3.0f;
+			generatePoint(point, i, lastPointPosition, z, width, height);
 			point_cloud_ptr->points.push_back(point);
-			//for using highest point as peak point
-			/*if (point.y < peak_point.y) {
-				peak_point = point;
-			}*/
 		}
 	}
 
 	//get peak point (middle of bounding box)
 	pcl::PointXYZ peak_point;
-	peak_point.x = (float)(x + (labelWidth / 2)) / width * 2.7f;
-	peak_point.y = (float)(y + labelHeight) / height * 2.4f;
-	peak_point.z = (float)z / numFrames * 3.0f;
+	generatePoint(peak_point, x + (labelWidth / 2), y + labelHeight, z, width, height);
 	peak_points->points.push_back(peak_point);
 }
 
@@ -222,7 +223,7 @@ Eigen::Matrix4f buildTransformationMatrix(Eigen::Matrix3f rotation, Eigen::Vecto
 //-----------------------------
 // compute correspondences
 //-----------------------------
-float computeCorrespondences(Eigen::Matrix4f& guess, pcl::PointCloud<pcl::PointXYZ>::Ptr input, pcl::PointCloud<pcl::PointXYZ>::Ptr target, bool use_error) {
+float computeCorrespondences(Eigen::Matrix4f& guess, pcl::PointCloud<pcl::PointXYZ>::Ptr input, pcl::PointCloud<pcl::PointXYZ>::Ptr target) {
 	// Point cloud containing the correspondences of each point in <input, indices>
 	pcl::PointCloud<pcl::PointXYZ>::Ptr input_transformed(new pcl::PointCloud<pcl::PointXYZ>);
 
@@ -264,7 +265,7 @@ float computeCorrespondences(Eigen::Matrix4f& guess, pcl::PointCloud<pcl::PointX
 	rejector_sampleConsensus->setInputTarget(target);
 	rejector_sampleConsensus->getCorrespondences(*correspondences);*/
 
-	if (use_error) {
+	//if (use_error) {
 		//float manhattan_sum = 0.0f;
 		////Manhattan distance L1
 		//for (auto& n : *correspondences) {
@@ -287,7 +288,7 @@ float computeCorrespondences(Eigen::Matrix4f& guess, pcl::PointCloud<pcl::PointX
 		l2_sum /= correspondences->size();
 		l2Sqr_sum /= correspondences->size();
 		return l2Sqr_sum;*/
-	}
+	//}
 	//get number of correspondences
 	size_t cnt = correspondences->size();
 	return (float)cnt;
@@ -300,7 +301,7 @@ void shift_and_roll(float angle_min, float angle_max, float angle_step,
 	float shift_min, float shift_max, float shift_step,
 	std::vector<std::pair<float, float>>& angle_count, std::vector<std::pair<float, float>>& shift_and_count,
 	Eigen::Matrix3f rotation, Eigen::Vector3f initialTranslation, Eigen::Vector3f direction,
-	pcl::PointCloud<pcl::PointXYZ>::Ptr model_voxelized, pcl::PointCloud<pcl::PointXYZ>::Ptr point_cloud_ptr, bool use_error) {
+	pcl::PointCloud<pcl::PointXYZ>::Ptr model_voxelized, pcl::PointCloud<pcl::PointXYZ>::Ptr point_cloud_ptr, bool use_improvement) {
 	int angle_max_index = 0;
 	int angle_index = 0;
 	for (float i = angle_min; i <= angle_max; i += angle_step) {
@@ -309,7 +310,7 @@ void shift_and_roll(float angle_min, float angle_max, float angle_step,
 			Eigen::Matrix3f rot = rotateByAngle((float)i, rotation);
 			Eigen::Vector3f trans = shiftByValue((float)j, initialTranslation, direction);
 			Eigen::Matrix4f transform = buildTransformationMatrix(rot, trans);
-			float correspondence_count = computeCorrespondences(transform, model_voxelized, point_cloud_ptr, use_error);
+			float correspondence_count = computeCorrespondences(transform, model_voxelized, point_cloud_ptr);
 			std::vector<std::pair<float, float>>::iterator it;
 			it = std::find_if(shift_and_count.begin(), shift_and_count.end(), [j](const std::pair<float, float>& p1) {
 				return p1.first == j; });
@@ -324,16 +325,18 @@ void shift_and_roll(float angle_min, float angle_max, float angle_step,
 		//----------------------------------
 		//algorithm performance improvement
 		//if correspondence number didn't grow for 5 angles, stop everything because it won't get better
-		if (angle_max_index + ((std::abs(angle_min) + std::abs(angle_max)) / angle_step) / 4 == angle_index) {
-			break;
-		}
-		//a better value than the current one was found, save the new index of the maximum value
-		if (angle_index > angle_max_index && angleCount > angle_count.at(angle_max_index).second) {
-			angle_max_index = angle_index;
+		if (use_improvement) {
+			if (angle_max_index + ((std::abs(angle_min) + std::abs(angle_max)) / angle_step) / 4 == angle_index) {
+				break;
+			}
+			//a better value than the current one was found, save the new index of the maximum value
+			if (angle_index > angle_max_index && angleCount > angle_count.at(angle_max_index).second) {
+				angle_max_index = angle_index;
+			}
+			angle_index++;
 		}
 		//----------------------------------
 		angle_count.push_back(std::pair<float, float>(i, angleCount));
-		angle_index++;
 	}
 }
 
@@ -471,7 +474,7 @@ main(int argc, char ** argv)
 		//compute 3d translation of the needle
 		float tangencyPoint = regression(needle_width) / (float)numFrames * 2.6f; //scaling
 		std::cout << "tangency point: " << tangencyPoint << std::endl;
-		Eigen::Vector3f initialTranslation = computeNeedleTranslation(tangencyPoint, std::get<0>(direction), std::get<1>(direction), getModelSize(model_voxelized));
+		Eigen::Vector3f initialTranslation = computeNeedleTranslation(tangencyPoint, std::get<0>(direction), std::get<1>(direction), getModelSize(model_voxelized) / 2);
 		std::cout << "translation: " << std::endl << initialTranslation << std::endl;
 
 		//build the transformation matrix with currently computed rotation and translation
@@ -493,7 +496,7 @@ main(int argc, char ** argv)
 		int max_index_angles = 0;
 		int max_index_shift = 0;
 
-		bool use_error = false;
+		bool use_improvement = true;
 		int NUM_STEPS = 2;
 		{
 			pcl::ScopeTime t("Shift and Roll");
@@ -501,7 +504,7 @@ main(int argc, char ** argv)
 				angle_count.clear();
 				shift_count.clear();
 				//apply shift and roll in small steps in given intervals and compute correspondences
-				shift_and_roll(angleStart, angleEnd, angleStep, shiftStart, shiftEnd, shiftStep, angle_count, shift_count, rotation, initialTranslation, std::get<1>(direction), model_voxelized, point_cloud_ptr, use_error);
+				shift_and_roll(angleStart, angleEnd, angleStep, shiftStart, shiftEnd, shiftStep, angle_count, shift_count, rotation, initialTranslation, std::get<1>(direction), model_voxelized, point_cloud_ptr, use_improvement);
 				//find index of maximum correspondences
 				max_index_angles = findMaxIndexOfMap(angle_count);
 				max_index_shift = findMaxIndexOfMap(shift_count);
@@ -519,7 +522,7 @@ main(int argc, char ** argv)
 				shiftStart = shift_count.at(max_index_shift - shift_min).first;
 				shiftEnd = shift_count.at(max_index_shift + shift_max).first;
 				shiftStep /= 5.0f;
-				std::cout << "angle: " << angle_count.at(max_index_angles).first << std::endl;
+				std::cout << "angle: " << angle_count.at(max_index_angles).first * -1 << std::endl;
 				std::cout << "shift: " << shift_count.at(max_index_shift).first << std::endl;
 				std::cout << "end of round: " << i << std::endl;
 
@@ -534,8 +537,6 @@ main(int argc, char ** argv)
 					shift_corr.push_back(shift_count.at(j).second);
 				}
 				showFloatGraph("Shift Correspondences", &shift_corr[0], shift_corr.size(), 0);*/
-
-				use_error = true;
 			}
 		}
 
