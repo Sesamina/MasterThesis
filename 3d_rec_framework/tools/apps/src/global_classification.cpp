@@ -58,15 +58,15 @@ void generatePoint(pcl::PointXYZ& point, float x, float y, float z, float width,
 //------------------------------------------------------------
 //convert labelled image (opencv matrix) to points for cloud
 //------------------------------------------------------------
-void MatToPointXYZ(cv::Mat& OpencVPointCloud, cv::Mat& labelInfo, int z, pcl::PointCloud<pcl::PointXYZ>::Ptr& point_cloud_ptr, pcl::PointCloud<pcl::PointXYZ>::Ptr& peak_points, int height, int width)
+void MatToPointXYZ(cv::Mat& OpencVPointCloud, cv::Mat& labelInfo, std::vector<cv::Point>& elipsePoints, int z, pcl::PointCloud<pcl::PointXYZ>::Ptr& point_cloud_ptr, pcl::PointCloud<pcl::PointXYZ>::Ptr& peak_points, int height, int width)
 {
 	//get the infos for the bounding box
 	int x = labelInfo.at<int>(0, cv::CC_STAT_LEFT);
 	int y = labelInfo.at<int>(0, cv::CC_STAT_TOP);
 	int labelWidth = labelInfo.at<int>(0, cv::CC_STAT_WIDTH);
 	int labelHeight = labelInfo.at<int>(0, cv::CC_STAT_HEIGHT);
-	//for using highest point as peak point
-	//pcl::PointXYZ peak_point(0, 0, 0);
+	int leftHeight = 0;
+	int rightHeight = 0;
 	//go through points in bounding box 
 	for (int i = x; i < x + labelWidth; i++) {
 		//indicate if first point with intensity = 1 in row has been found
@@ -80,6 +80,12 @@ void MatToPointXYZ(cv::Mat& OpencVPointCloud, cv::Mat& labelInfo, int z, pcl::Po
 					firstNotFound = false;
 				}
 				lastPointPosition = j;
+				if (i == x) {
+					leftHeight = j;
+				}
+				if (i == x + labelWidth - 1) {
+					rightHeight = j;
+				}
 			}
 		}
 		if (!firstNotFound) {
@@ -87,13 +93,16 @@ void MatToPointXYZ(cv::Mat& OpencVPointCloud, cv::Mat& labelInfo, int z, pcl::Po
 			pcl::PointXYZ point;
 			generatePoint(point, i, lastPointPosition, z, width, height);
 			point_cloud_ptr->points.push_back(point);
+			elipsePoints.push_back(cv::Point(i, lastPointPosition));
 		}
 	}
-
-	//get peak point (middle of bounding box)
 	pcl::PointXYZ peak_point;
-	generatePoint(peak_point, x + (labelWidth / 2), y + labelHeight, z, width, height);
-	peak_points->points.push_back(peak_point);
+
+	//--WRONG--get peak point (middle of bounding box)--WRONG--
+	//generatePoint(peak_point, x + (labelWidth / 2), y + labelHeight, z, width, height);
+
+	//generatePoint(peak_point, x + (labelWidth / 2), y + (std::abs(leftHeight - rightHeight) / 2), z, width, height);
+	//peak_points->points.push_back(peak_point);
 }
 
 //----------------------------------------------
@@ -162,7 +171,6 @@ Eigen::Matrix3f computeNeedleRotation(std::pair<Eigen::Vector3f, Eigen::Vector3f
 //compute needle translation
 //------------------------------------
 Eigen::Vector3f computeNeedleTranslation(float tangencyPoint, Eigen::Vector3f pointOnOCTCloud, Eigen::Vector3f direction, float halfModelSize) {
-	//needle model 1.5?
 	if (direction.z() < 0) {
 		direction *= -1;
 	}
@@ -170,20 +178,20 @@ Eigen::Vector3f computeNeedleTranslation(float tangencyPoint, Eigen::Vector3f po
 	float dist = std::abs(pointOnOCTCloud.z() - tangencyPoint);
 	float mult = std::abs(dist / direction.z());
 	if (pointOnOCTCloud.z() < tangencyPoint) {
-		while (translation.z() < tangencyPoint) {
+		//while (translation.z() < tangencyPoint) {
 			translation += direction * mult;
-		}
+		//}
 	}
 	else if (pointOnOCTCloud.z() > tangencyPoint) {
-		while (translation.z() > tangencyPoint) {
+		//while (translation.z() > tangencyPoint) {
 			translation -= direction * mult;
-		}
+		//}
 	}
 	translation -= (halfModelSize / direction.z()) * direction;
 
-	//subtract needle radius in y direction to get model to same hight as oct cloud
-	float needleDiameter = 0.31f;
-	translation(1, 0) -= needleDiameter / 2;
+	//subtract needle radius in y direction to get model to same hight as oct cloud -- ONLY when middle of bounding box is used
+	/*float needleDiameter = 0.31f;
+	translation(1, 0) -= needleDiameter / 2;*/
 
 	return translation;
 }
@@ -245,7 +253,7 @@ float computeCorrespondences(Eigen::Matrix4f& guess, pcl::PointCloud<pcl::PointX
 	correspondence_estimation->setInputSource(input_transformed);
 	boost::shared_ptr<pcl::Correspondences> correspondences(new pcl::Correspondences);
 	// Estimate correspondences ---------- maxDistance: VoxelSize * 2
-	 /*#1)*/ correspondence_estimation->determineCorrespondences(*correspondences, 0.03f * 2.f);
+	/*#1)*/ correspondence_estimation->determineCorrespondences(*correspondences, 0.03f * 2);
 	// /*#2)*/ correspondence_estimation->determineReciprocalCorrespondences(*correspondences, 0.03f * 2.f);
 	boost::shared_ptr<pcl::Correspondences> temp_correspondences(new pcl::Correspondences(*correspondences));
 	/*#3)#4)*/ /*pcl::registration::CorrespondenceRejectorDistance::Ptr rejector_distance(new pcl::registration::CorrespondenceRejectorDistance);
@@ -288,8 +296,8 @@ float computeCorrespondences(Eigen::Matrix4f& guess, pcl::PointCloud<pcl::PointX
 		l2_sum /= correspondences->size();
 		l2Sqr_sum /= correspondences->size();
 		return l2Sqr_sum;*/
-	//}
-	//get number of correspondences
+		//}
+		//get number of correspondences
 	size_t cnt = correspondences->size();
 	return (float)cnt;
 }
@@ -388,7 +396,16 @@ recognizeOCT(pcl::PointCloud<pcl::PointXYZ>::Ptr& point_cloud_ptr, pcl::PointClo
 		//go through all frames
 		for (int w = 0; w < end_index; w++) {
 			std::tuple<int, int, cv::Mat, cv::Mat> tup = needle_width->at(w);
-			MatToPointXYZ(std::get<2>(tup), std::get<3>(tup), w, point_cloud_ptr, peak_points, imageGray.rows, imageGray.cols);
+			std::vector<cv::Point> elipsePoints;
+			MatToPointXYZ(std::get<2>(tup), std::get<3>(tup), elipsePoints, w, point_cloud_ptr, peak_points, imageGray.rows, imageGray.cols);
+			
+			//compute center point of needle frame for translation
+			if (elipsePoints.size() >= 50) { //to remove outliers
+				cv::RotatedRect elipse = cv::fitEllipse(cv::Mat(elipsePoints));
+				pcl::PointXYZ peak;
+				generatePoint(peak, elipse.center.x, elipse.center.y, w, imageGray.cols, imageGray.rows);
+				peak_points->push_back(peak);
+			}
 		}
 	}
 
@@ -496,7 +513,7 @@ main(int argc, char ** argv)
 		int max_index_angles = 0;
 		int max_index_shift = 0;
 
-		bool use_improvement = true;
+		bool use_improvement = false;
 		int NUM_STEPS = 2;
 		{
 			pcl::ScopeTime t("Shift and Roll");
@@ -573,8 +590,8 @@ main(int argc, char ** argv)
 		viewer->addPointCloud<pcl::PointXYZ>(origin_ptr, rgb_handler2, "test points");
 		pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> rgb_handler3(point_cloud_ptr, 0, 255, 0);
 		viewer->addPointCloud<pcl::PointXYZ>(point_cloud_ptr, rgb_handler3, "oct cloud");
-		/*pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> rgb_handler4(peak_points, 0, 255, 255);
-		viewer->addPointCloud<pcl::PointXYZ>(peak_points, rgb_handler4, "peak points");*/
+		pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> rgb_handler4(peak_points, 255, 10, 10);
+		viewer->addPointCloud<pcl::PointXYZ>(peak_points, rgb_handler4, "peak points");
 		pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> rgb_handler5(modelTransformed, 0, 255, 255);
 		viewer->addPointCloud<pcl::PointXYZ>(modelTransformed, rgb_handler5, "model transformed");
 		viewer->addLine(point2, point3, "line");
