@@ -4,6 +4,8 @@
 #include <mlpack/methods/linear_regression/linear_regression.hpp>
 #include <armadillo>
 #include "opencv2\opencv.hpp"
+#include <pcl/sample_consensus/ransac.h>
+#include <pcl/sample_consensus/sac_model_line.h>
 
 
 // regress a line through the given points and return error
@@ -41,6 +43,17 @@ std::pair<Eigen::Vector3f, Eigen::Vector3f> fitLine(std::vector<Eigen::Vector3f>
 	Eigen::Vector3f axis = eig.eigenvectors().col(2).normalized();
 	//multiply with -1 so that it points towards origin
 	return std::make_pair(origin, axis * -1.0f);
+}
+
+std::vector<int> getInliers(pcl::PointCloud<pcl::PointXYZ>::Ptr& peak_points) {
+	std::vector<int> inliers;
+	pcl::SampleConsensusModelLine<pcl::PointXYZ>::Ptr
+		model(new pcl::SampleConsensusModelLine<pcl::PointXYZ>(peak_points));
+	pcl::RandomSampleConsensus<pcl::PointXYZ> ransac(model);
+	ransac.setDistanceThreshold(.01);
+	ransac.computeModel();
+	ransac.getInliers(inliers);
+	return inliers;
 }
 
 // regress the variable t in the equation
