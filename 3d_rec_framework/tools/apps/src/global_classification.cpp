@@ -140,8 +140,8 @@ void MatToPointXYZ(cv::Mat& OpencVPointCloud, cv::Mat& labelInfo, std::vector<cv
 			peak_inliers->push_back(peak_points->at(inliers.at(i)));
 		}
 		std::vector<Eigen::Vector3f> peak_positions;
-		for (int i = 0; i < peak_points->points.size(); i++) {//NOT RANSAC
-			pcl::PointXYZ point = peak_points->points.at(i); //NOT RANSAC
+		for (int i = 0; i < peak_inliers->points.size(); i++) {//for RANSAC use peak_inliers, else peak_points
+			pcl::PointXYZ point = peak_inliers->points.at(i); //for RANSAC use peak_inliers, else peak_points
 			Eigen::Vector3f eigenPoint(point.x, point.y, point.z); 
 			peak_positions.push_back(eigenPoint);
 		}
@@ -291,9 +291,9 @@ void MatToPointXYZ(cv::Mat& OpencVPointCloud, cv::Mat& labelInfo, std::vector<cv
 		return (float)cnt;
 	}
 
-	//-----------------------------------
-	//shifting/roll in defined intervals
-	//-----------------------------------
+	//-------------------------------------------------------------------
+	//shifting/roll in defined intervals with summing up correspondences
+	//-------------------------------------------------------------------
 	void shift_and_roll(float angle_min, float angle_max, float angle_step,
 		float shift_min, float shift_max, float shift_step,
 		std::vector<std::pair<float, float>>& angle_count, std::vector<std::pair<float, float>>& shift_and_count,
@@ -441,12 +441,14 @@ void MatToPointXYZ(cv::Mat& OpencVPointCloud, cv::Mat& labelInfo, std::vector<cv
 		//-------------------------------------
 
 		pcl::PointCloud<pcl::PointXYZ>::Ptr point_cloud_ptr(new pcl::PointCloud<pcl::PointXYZ>);
+		pcl::PointCloud<pcl::PointXYZ>::Ptr point_cloud_cut(new pcl::PointCloud<pcl::PointXYZ>);
 		pcl::PointCloud<pcl::PointXYZ>::Ptr peak_points(new pcl::PointCloud<pcl::PointXYZ>);
-		boost::shared_ptr<std::vector<std::tuple<int, int, cv::Mat, cv::Mat>>> needle_width = recognizeOCT(point_cloud_ptr, peak_points, oct_dir, only_tip);
+		boost::shared_ptr<std::vector<std::tuple<int, int, cv::Mat, cv::Mat>>> needle_width = recognizeOCT(point_cloud_cut, peak_points, oct_dir, only_tip);
+		pcl::PointCloud<pcl::PointXYZ>::Ptr model_half_Z(new pcl::PointCloud<pcl::PointXYZ>());
+		cutModelinHalf(point_cloud_cut, point_cloud_ptr, 2);
 
 		//-------------------------------
-		//shifting algorithm - TODO: apply rotation of few degrees in every direction, 
-		//shift in needle direction and measure correspondences
+		//shifting algorithm
 		//-------------------------------
 		if (shift) {
 
@@ -496,8 +498,8 @@ void MatToPointXYZ(cv::Mat& OpencVPointCloud, cv::Mat& labelInfo, std::vector<cv
 			float angleStart = -90.0f;
 			float angleEnd = 90.0f;
 			float angleStep = 1.0f;
-			float shiftStart = -0.3f;
-			float shiftEnd = 0.0f;
+			float shiftStart = 0.0f;
+			float shiftEnd = 0.3f;
 			float shiftStep = 0.05f;
 			int max_index_angles = 0;
 			int max_index_shift = 0;
@@ -584,6 +586,7 @@ void MatToPointXYZ(cv::Mat& OpencVPointCloud, cv::Mat& labelInfo, std::vector<cv
 			pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> rgb_handler5(modelTransformed, 0, 255, 255);
 			viewer->addPointCloud<pcl::PointXYZ>(modelTransformed, rgb_handler5, "model transformed");
 			viewer->addLine(point2, point3, "line");
+			viewer->addLine(pcl::PointXYZ(0, 0.5f, tangencyPoint), pcl::PointXYZ(2, 0.5f, tangencyPoint), "tangencyLine");
 			viewer->addCoordinateSystem(2.0);
 			viewer->initCameraParameters();
 			viewer->spin();
