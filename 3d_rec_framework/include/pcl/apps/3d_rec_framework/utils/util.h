@@ -6,6 +6,13 @@
 #include <boost/filesystem.hpp>
 #include <boost/algorithm/string.hpp>
 
+//fixed number of OCT images
+#define NUM_FRAMES 128
+//scale of OCT cube
+#define SCALE_X 2.7
+#define SCALE_Y 2.4
+#define SCALE_Z 3.0
+
 // process the path to get the right format 
 std::string getDirectoryPath(std::string path) {
 	std::replace(path.begin(), path.end(), '\\', '/');
@@ -122,6 +129,16 @@ void cutModelinHalf(pcl::PointCloud<pcl::PointXYZ>::Ptr& modelCloud, pcl::PointC
 	}
 }
 
+//cut a part of the model off, size specified by the missing_frames number
+void cutPartOfModel(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, pcl::PointCloud<pcl::PointXYZ>::Ptr& cut, int missing_frames) {
+	float to_cut_until = (float)missing_frames / NUM_FRAMES;
+	for (int i = 0; i < cloud->points.size(); i++) {
+		if (cloud->points.at(i).z >= to_cut_until) {
+			cut->push_back(cloud->points.at(i));
+		}
+	}
+}
+
 //get the model size in z direction
 float getModelSize(pcl::PointCloud<pcl::PointXYZ>::Ptr modelCloud) {
 	float min = modelCloud->points.at(0).z;
@@ -139,15 +156,23 @@ float getModelSize(pcl::PointCloud<pcl::PointXYZ>::Ptr modelCloud) {
 }
 
 //find the index of the pair with maximal value
-auto findMaxIndexOfMap(std::vector<std::pair<float, float>> map) {
+auto findMaxIndexOfVectorOfPairs(std::vector<std::pair<float, float>> map) {
 	auto max_index = std::distance(map.begin(), std::max_element(map.begin(), map.end(),
 		[](const std::pair<float, float>& p1, const std::pair<float, float>& p2) {
 		return p1.second < p2.second; }));
 	return max_index;
 }
 
+//find the index of the tuple with maximal value
+auto findMaxIndexOfVectorOfTuples(std::vector<std::tuple<float, float, float>> tuples) {
+	auto max_index = std::distance(tuples.begin(), std::max_element(tuples.begin(), tuples.end(),
+		[](const std::tuple<float, float, float>& p1, const std::tuple<float, float, float>& p2) {
+		return std::get<2>(p1) < std::get<2>(p2); }));
+	return max_index;
+}
+
 //check for a given index if it is possible to go a given number of steps in both directions or if it would be out of bounds
-int checkMinBounds(int steps, int index_in_vector) {
+int checkMinBoundsForVectorIndex(int steps, int index_in_vector) {
 	int angle_min = steps;
 	if (!(index_in_vector > 1)) {
 		angle_min--;
@@ -157,7 +182,7 @@ int checkMinBounds(int steps, int index_in_vector) {
 	}
 	return angle_min;
 }
-int checkMaxBounds(int steps, int index_in_vector, int vector_size) {
+int checkMaxBoundsForVectorIndex(int steps, int index_in_vector, int vector_size) {
 	int angle_max = steps;
 	if (!(index_in_vector < (vector_size - 2))) {
 		angle_max--;
@@ -166,4 +191,26 @@ int checkMaxBounds(int steps, int index_in_vector, int vector_size) {
 		}
 	}
 	return angle_max;
+}
+
+float checkMinBoundsForValue(float value, float start, float step) {
+	float val = value - step;
+	if ((val > start)) {
+		val -= step;
+		if ((val > start)) {
+			return val;
+		}
+	}
+	return start;
+}
+
+float checkMaxBoundsForValue(float value, float end, float step) {
+	float val = value + step;
+	if ((val < end)) {
+		val += step;
+		if ((val < end)) {
+			return val;
+		}
+	}
+	return end;
 }

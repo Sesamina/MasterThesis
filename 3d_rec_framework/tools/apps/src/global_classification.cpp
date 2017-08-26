@@ -44,15 +44,19 @@
 #include "pcl/apps/3d_rec_framework/utils/graphUtils/GraphUtils.h"
 
  //fixed number of OCT images
-int numFrames = 128;
+#define NUM_FRAMES 128
+ //scale of OCT cube
+#define SCALE_X 2.7
+#define SCALE_Y 2.4
+#define SCALE_Z 3.0
 
 //-------------------------------------
 //helper method to generate a PointXYZ
 //-------------------------------------
 void generatePoint(pcl::PointXYZ& point, float x, float y, float z, float width, float height) {
-	point.x = (float)x / width * 2.7f;
-	point.y = (float)y / height * 2.4f;
-	point.z = (float)z / numFrames * 3.0f;
+	point.x = (float)x / width * SCALE_X;
+	point.y = (float)y / height * SCALE_Y;
+	point.z = (float)z / NUM_FRAMES * SCALE_Z;
 }
 
 //------------------------------------------------------------
@@ -337,6 +341,33 @@ void MatToPointXYZ(cv::Mat& OpencVPointCloud, cv::Mat& labelInfo, std::vector<cv
 		}
 	}
 
+	//-------------------------------------------------------------------
+	//shifting/roll in defined intervals without summing up correspondences
+	//-------------------------------------------------------------------
+	void shift_and_roll_without_sum(float angle_min, float angle_max, float angle_step,
+		float shift_min, float shift_max, float shift_step,
+		std::vector<std::tuple<float, float, float>>& count,
+		Eigen::Matrix3f rotation, Eigen::Vector3f initialTranslation, Eigen::Vector3f direction,
+		pcl::PointCloud<pcl::PointXYZ>::Ptr model_voxelized, pcl::PointCloud<pcl::PointXYZ>::Ptr point_cloud_ptr) {
+		int num_angle_steps = (angle_max - angle_min) / angle_step;
+		int num_shift_steps = (shift_max - shift_min) / shift_step;
+		for (int i = 0; i <= num_angle_steps * num_shift_steps + 1; i++) {
+			count.push_back(std::tuple<float, float, float>(0, 0, 0));
+		}
+#pragma omp parallel for num_threads(omp_get_num_procs())
+		for (int angle = 0; angle < num_angle_steps; angle++) {
+			int shift_index = 0;
+			for (float shift = shift_min; shift <= shift_max; shift += shift_step) {
+				Eigen::Matrix3f rot = rotateByAngle((float)angle_min + angle * angle_step, rotation);
+				Eigen::Vector3f trans = shiftByValue((float)shift, initialTranslation, direction);
+				Eigen::Matrix4f transform = buildTransformationMatrix(rot, trans);
+				float correspondence_count = computeCorrespondences(transform, model_voxelized, point_cloud_ptr);
+				count.at(angle * num_shift_steps + shift_index) = std::tuple<float, float, float>(angle_min + angle * angle_step, shift, correspondence_count);
+				shift_index++;
+			}
+		}
+	}
+
 	//-----------------------------------
 	//setup oct point cloud for alignment
 	//-----------------------------------
@@ -457,7 +488,10 @@ void MatToPointXYZ(cv::Mat& OpencVPointCloud, cv::Mat& labelInfo, std::vector<cv
 			//-------------------------------
 			pcl::PointCloud<pcl::PointXYZ>::Ptr modelCloud(new pcl::PointCloud<pcl::PointXYZ>);
 			pcl::PointCloud<pcl::PointXYZ>::Ptr model_voxelized(new pcl::PointCloud<pcl::PointXYZ>());
+			pcl::PointCloud<pcl::PointXYZ>::Ptr model_voxelized_cut(new pcl::PointCloud<pcl::PointXYZ>());
 			generatePointCloudFromModel(modelCloud, model_voxelized, path);
+			int missing_frames = NUM_FRAMES - needle_width->size();
+			cutPartOfModel(model_voxelized, model_voxelized_cut, 0);//missing_frames);
 			/*pcl::PointCloud<pcl::PointXYZ>::Ptr model_half_Y(new pcl::PointCloud<pcl::PointXYZ>());
 			cutModelinHalf(model_voxelized, model_half_Y, 1);
 			pcl::PointCloud<pcl::PointXYZ>::Ptr model_half_Z(new pcl::PointCloud<pcl::PointXYZ>());
@@ -480,7 +514,7 @@ void MatToPointXYZ(cv::Mat& OpencVPointCloud, cv::Mat& labelInfo, std::vector<cv
 			std::cout << "euler angles: " << std::endl << rotation.eulerAngles(0, 1, 2) * 180 / M_PI << std::endl;
 
 			//compute 3d translation of the needle
-			float tangencyPoint = regression(needle_width) / (float)numFrames * 2.6f; //scaling
+			float tangencyPoint = regression(needle_width) / (float)NUM_FRAMES * SCALE_Z; //scaling
 			std::cout << "tangency point: " << tangencyPoint << std::endl;
 			Eigen::Vector3f initialTranslation = computeNeedleTranslation(tangencyPoint, std::get<0>(direction), std::get<1>(direction), getModelSize(model_voxelized) / 2);
 			std::cout << "translation: " << std::endl << initialTranslation << std::endl;
@@ -488,8 +522,9 @@ void MatToPointXYZ(cv::Mat& OpencVPointCloud, cv::Mat& labelInfo, std::vector<cv
 			//build the transformation matrix with currently computed rotation and translation
 			Eigen::Matrix4f transformation = buildTransformationMatrix(rotation, initialTranslation);
 
-			std::vector<std::pair<float, float>> angle_count;
-			std::vector<std::pair<float, float>> shift_count;
+			//std::vector<std::pair<float, float>> angle_count;
+			//std::vector<std::pair<float, float>> shift_count;
+			std::vector<std::tuple<float, float, float>> correspondence_count;
 
 			//--------------------------------------
 			//start of shifting algorithm
@@ -501,37 +536,51 @@ void MatToPointXYZ(cv::Mat& OpencVPointCloud, cv::Mat& labelInfo, std::vector<cv
 			float shiftStart = 0.0f;
 			float shiftEnd = 0.3f;
 			float shiftStep = 0.05f;
-			int max_index_angles = 0;
-			int max_index_shift = 0;
+			//int max_index_angles = 0;
+			//int max_index_shift = 0;
+			int correspondence_index = 0;
+			float max_angle = 0.0f;
+			float max_shift = 0.0f;
 
 			bool use_improvement = false;
 			int NUM_STEPS = 2;
 			{
 				pcl::ScopeTime t("Shift and Roll");
 				for (int i = 0; i < 4; i++) {
-					angle_count.clear();
-					shift_count.clear();
+					//angle_count.clear();
+					//shift_count.clear();
+					correspondence_count.clear();
 					//apply shift and roll in small steps in given intervals and compute correspondences
-					shift_and_roll(angleStart, angleEnd, angleStep, shiftStart, shiftEnd, shiftStep, angle_count, shift_count, rotation, initialTranslation, std::get<1>(direction), model_voxelized, point_cloud_ptr, use_improvement);
+					//shift_and_roll(angleStart, angleEnd, angleStep, shiftStart, shiftEnd, shiftStep, angle_count, shift_count, rotation, initialTranslation, std::get<1>(direction), model_voxelized, point_cloud_ptr, use_improvement);
+					shift_and_roll_without_sum(angleStart, angleEnd, angleStep, shiftStart, shiftEnd, shiftStep, correspondence_count, rotation, initialTranslation, std::get<1>(direction), model_voxelized_cut, point_cloud_ptr);
 					//find index of maximum correspondences
-					max_index_angles = findMaxIndexOfMap(angle_count);
-					max_index_shift = findMaxIndexOfMap(shift_count);
+					//max_index_angles = findMaxIndexOfVectorOfPairs(angle_count);
+					//max_index_shift = findMaxIndexOfVectorOfPairs(shift_count);
+					correspondence_index = findMaxIndexOfVectorOfTuples(correspondence_count);
+					max_angle = std::get<0>(correspondence_count.at(correspondence_index));
+					max_shift = std::get<1>(correspondence_count.at(correspondence_index));
 
 					//check bounds of vectors to make sure that in both directions of max indices you can go as far as specified
-					int angle_min = checkMinBounds(NUM_STEPS, max_index_angles);
-					int angle_max = checkMaxBounds(NUM_STEPS, max_index_angles, angle_count.size());
-					int shift_min = checkMinBounds(NUM_STEPS, max_index_shift);
-					int shift_max = checkMaxBounds(NUM_STEPS, max_index_shift, shift_count.size());
+					/*int angle_min = checkMinBoundsForVectorIndex(NUM_STEPS, max_index_angles);
+					int angle_max = checkMaxBoundsForVectorIndex(NUM_STEPS, max_index_angles, angle_count.size());
+					int shift_min = checkMinBoundsForVectorIndex(NUM_STEPS, max_index_shift);
+					int shift_max = checkMaxBoundsForVectorIndex(NUM_STEPS, max_index_shift, shift_count.size());*/
+					angleStart = checkMinBoundsForValue(max_angle, angleStart, angleStep);
+					angleEnd = checkMaxBoundsForValue(max_angle, angleEnd, angleStep);
+					shiftStart = checkMinBoundsForValue(max_shift, shiftStart, shiftStep);
+					shiftEnd = checkMaxBoundsForValue(max_shift, shiftEnd, shiftStep);
 
 					//assign new interval values
-					angleStart = angle_count.at(max_index_angles - angle_min).first;
+					/*angleStart = angle_count.at(max_index_angles - angle_min).first;
 					angleEnd = angle_count.at(max_index_angles + angle_max).first;
-					angleStep /= 5.0f;
 					shiftStart = shift_count.at(max_index_shift - shift_min).first;
-					shiftEnd = shift_count.at(max_index_shift + shift_max).first;
+					shiftEnd = shift_count.at(max_index_shift + shift_max).first;*/
+					angleStep /= 5.0f;
 					shiftStep /= 5.0f;
-					std::cout << "angle: " << angle_count.at(max_index_angles).first * -1 << std::endl;
-					std::cout << "shift: " << shift_count.at(max_index_shift).first << std::endl;
+					//std::cout << "angle: " << angle_count.at(max_index_angles).first * -1 << std::endl;
+					//std::cout << "shift: " << shift_count.at(max_index_shift).first << std::endl;
+					std::cout << "angle: " << max_angle * -1 << std::endl;
+					std::cout << "shift: " << max_shift << std::endl;
 					std::cout << "end of round: " << i << std::endl;
 
 					//show correspondence count as graph
@@ -550,8 +599,9 @@ void MatToPointXYZ(cv::Mat& OpencVPointCloud, cv::Mat& labelInfo, std::vector<cv
 
 			//transform point cloud to currently best values
 			pcl::PointCloud<pcl::PointXYZ>::Ptr modelTransformed(new pcl::PointCloud<pcl::PointXYZ>);
-			transformation = buildTransformationMatrix(rotateByAngle(angle_count.at(max_index_angles).first, rotation), shiftByValue(shift_count.at(max_index_shift).first, initialTranslation, std::get<1>(direction)));
-			pcl::transformPointCloud(*model_voxelized, *modelTransformed, transformation);
+			//transformation = buildTransformationMatrix(rotateByAngle(angle_count.at(max_index_angles).first, rotation), shiftByValue(shift_count.at(max_index_shift).first, initialTranslation, std::get<1>(direction)));
+			transformation = buildTransformationMatrix(rotateByAngle(max_angle, rotation), shiftByValue(max_shift, initialTranslation, std::get<1>(direction)));
+			pcl::transformPointCloud(*model_voxelized_cut, *modelTransformed, transformation);
 
 			Eigen::Matrix3f end_rot = transformation.block(0, 0, 3, 3);
 			Eigen::Vector3f eulerAngles = end_rot.eulerAngles(0, 1, 2);
