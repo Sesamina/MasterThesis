@@ -603,15 +603,53 @@ void MatToPointXYZ(cv::Mat& OpencVPointCloud, cv::Mat& labelInfo, std::vector<cv
 			transformation = buildTransformationMatrix(rotateByAngle(max_angle, rotation), shiftByValue(max_shift, initialTranslation, std::get<1>(direction)));
 			pcl::transformPointCloud(*model_voxelized_cut, *modelTransformed, transformation);
 
+			float x_middle_OCT = computeMiddle(point_cloud_ptr, 0.0f);
+
+			float z_min = getMinZValue(modelTransformed);
+			float x_middle_model = computeMiddle(modelTransformed, z_min);
+
+			Eigen::Vector3f OCT_point(x_middle_OCT, 0.0f, 0.0f);
+			float x_in_direction = (OCT_point - (std::abs(0.0f - z_min) / std::get<1>(direction).z() * std::get<1>(direction))).x();
+			if (max_angle > 0) {
+				x_in_direction = x_middle_OCT;
+			}
+			{
+				pcl::ScopeTime t("Final Adjustments");
+				if (x_middle_model < x_in_direction) {
+					while (x_middle_model < x_in_direction) {
+						transformation = buildTransformationMatrix(rotateByAngle(-0.5f, transformation.block(0, 0, 3, 3)), shiftByValue(max_shift, initialTranslation, std::get<1>(direction)));
+						pcl::transformPointCloud(*model_voxelized_cut, *modelTransformed, transformation);
+						x_middle_model = computeMiddle(modelTransformed, getMinZValue(modelTransformed));
+					}
+				}
+				else if (x_middle_model > x_in_direction) {
+					while (x_middle_model > x_in_direction) {
+						transformation = buildTransformationMatrix(rotateByAngle(0.5f, transformation.block(0, 0, 3, 3)), shiftByValue(max_shift, initialTranslation, std::get<1>(direction)));
+						pcl::transformPointCloud(*model_voxelized_cut, *modelTransformed, transformation);
+						x_middle_model = computeMiddle(modelTransformed, getMinZValue(modelTransformed));
+					}
+				}
+			}
+
+
+
 			Eigen::Matrix3f end_rot = transformation.block(0, 0, 3, 3);
 			Eigen::Vector3f eulerAngles = end_rot.eulerAngles(0, 1, 2);
 			eulerAngles *= 180 / M_PI;
 			std::cout << eulerAngles << std::endl;
+			float end_angle = 0.0f;
+			if (eulerAngles.z() < 0) {
+				end_angle = -180 - eulerAngles.z();
+			}
+			else {
+				end_angle = 180 - eulerAngles.z();
+			}
+
+			std::cout << std::endl << "final angle: " << end_angle << std::endl;
 
 			//--------------------------------
 			//visualization
 			//--------------------------------
-			pcl::PointCloud<pcl::PointXYZ>::Ptr origin_ptr(new pcl::PointCloud<pcl::PointXYZ>);
 			pcl::PointXYZ point2;
 			point2.x = std::get<0>(direction).x() + 2 * std::get<1>(direction).x();
 			point2.y = std::get<0>(direction).y() + 2 * std::get<1>(direction).y();
@@ -620,15 +658,11 @@ void MatToPointXYZ(cv::Mat& OpencVPointCloud, cv::Mat& labelInfo, std::vector<cv
 			point3.x = std::get<0>(direction).x() - 2 * std::get<1>(direction).x();
 			point3.y = std::get<0>(direction).y() - 2 * std::get<1>(direction).y();
 			point3.z = std::get<0>(direction).z() - 2 * std::get<1>(direction).z();
-			origin_ptr->points.push_back(point2);
-			origin_ptr->points.push_back(point3);
 			//show model
 			boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer(new pcl::visualization::PCLVisualizer("3D Viewer"));
 			viewer->setBackgroundColor(0, 0, 0);
 			pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> rgb_handler(model_voxelized, 0, 0, 255);
 			viewer->addPointCloud<pcl::PointXYZ>(model_voxelized, rgb_handler, "model");
-			pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> rgb_handler2(origin_ptr, 255, 0, 0);
-			viewer->addPointCloud<pcl::PointXYZ>(origin_ptr, rgb_handler2, "test points");
 			pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> rgb_handler3(point_cloud_ptr, 0, 255, 0);
 			viewer->addPointCloud<pcl::PointXYZ>(point_cloud_ptr, rgb_handler3, "oct cloud");
 			pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> rgb_handler4(peak_points, 255, 10, 10);
@@ -636,7 +670,7 @@ void MatToPointXYZ(cv::Mat& OpencVPointCloud, cv::Mat& labelInfo, std::vector<cv
 			pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> rgb_handler5(modelTransformed, 0, 255, 255);
 			viewer->addPointCloud<pcl::PointXYZ>(modelTransformed, rgb_handler5, "model transformed");
 			viewer->addLine(point2, point3, "line");
-			viewer->addLine(pcl::PointXYZ(0, 0.5f, tangencyPoint), pcl::PointXYZ(2, 0.5f, tangencyPoint), "tangencyLine");
+			//viewer->addLine(pcl::PointXYZ(x_middle_OCT, 0.5f, 0), pcl::PointXYZ(x_in_direction, 0.5f - 2 * std::get<1>(direction).y(), -2 * std::get<1>(direction).z()), "middleOCT");
 			viewer->addCoordinateSystem(2.0);
 			viewer->initCameraParameters();
 			viewer->spin();

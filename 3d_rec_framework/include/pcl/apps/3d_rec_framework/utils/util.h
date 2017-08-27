@@ -214,3 +214,36 @@ float checkMaxBoundsForValue(float value, float end, float step) {
 	}
 	return end;
 }
+
+float computeMiddle(pcl::PointCloud<pcl::PointXYZ>::Ptr point_cloud_ptr, float z) {
+	float x_min = 2.0f;
+	float x_max = -2.0f;
+	for (int i = 0; i < point_cloud_ptr->points.size(); i++) {
+		pcl::PointXYZ point = point_cloud_ptr->at(i);
+		if (point.z == z) {
+			if (point.x < x_min) {
+				x_min = point.x;
+			}
+			if (point.x > x_max) {
+				x_max = point.x;
+			}
+		}
+	}
+	if (x_max != x_min) {
+		return x_min + ((x_max - x_min) / 2.0f);
+	}
+	else {
+		return x_min;
+	}
+}
+
+float getMinZValue(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud) {
+	float z = 2.0f;
+	for (int i = 0; i < cloud->points.size(); i++) {
+		pcl::PointXYZ point = cloud->at(i);
+		if (point.z < z) {
+			z = point.z;
+		}
+	}
+	return z;
+}
