@@ -38,6 +38,7 @@
 #include "pcl/apps/3d_rec_framework/utils/regression.h"
 
 #include <pcl/common/time.h>
+#include <pcl/common/intersections.h>
 
 #include "opencv2\opencv.hpp"
 
@@ -149,6 +150,7 @@ void MatToPointXYZ(cv::Mat& OpencVPointCloud, cv::Mat& labelInfo, std::vector<cv
 			Eigen::Vector3f eigenPoint(point.x, point.y, point.z); 
 			peak_positions.push_back(eigenPoint);
 		}
+		peak_points = peak_inliers; //only when using RANSAC
 		return fitLine(peak_positions);
 	}
 
@@ -439,6 +441,23 @@ void MatToPointXYZ(cv::Mat& OpencVPointCloud, cv::Mat& labelInfo, std::vector<cv
 		return needle_width;
 	}
 
+	float computeTipX(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, std::pair<Eigen::Vector3f, Eigen::Vector3f> origin_and_direction_needle, float x_middle_OCT) {
+		pcl::PointXYZ min(0.0f, 0.0f, 2.0f);
+		for (int i = 0; i < cloud->points.size(); i++) {
+			pcl::PointXYZ point = cloud->at(i);
+			if (point.z < min.z) {
+				min = point;
+			}
+		}
+		Eigen::VectorXf line1(6);
+		line1 << x_middle_OCT, 0.0f, 0.0f, std::get<1>(origin_and_direction_needle)(0), 0.0f, std::get<1>(origin_and_direction_needle)(2);
+		Eigen::VectorXf line2(6);
+		line2 << min.x, 0.0f, min.z, std::get<1>(origin_and_direction_needle)(2), 0.0f, -std::get<1>(origin_and_direction_needle)(0);
+		Eigen::Vector4f point;
+		pcl::lineWithLineIntersection(line1, line2, point);
+		return point.x();
+	}
+
 	//bin/pcl_global_classification -models_dir /directory/of/cad/model/in/ply/format -training_dir /directory/where/trained/models/should/be/saved -nn 10 -oct_dir /directory/to/oct/frames -only_tip 1
 
 	int
@@ -613,6 +632,9 @@ void MatToPointXYZ(cv::Mat& OpencVPointCloud, cv::Mat& labelInfo, std::vector<cv
 			if (max_angle > 0) {
 				x_in_direction = x_middle_OCT;
 			}
+			std::cout << x_in_direction << std::endl;
+			x_in_direction = computeTipX(modelTransformed, direction, x_middle_OCT);
+			std::cout << x_in_direction << std::endl;
 			{
 				pcl::ScopeTime t("Final Adjustments");
 				if (x_middle_model < x_in_direction) {
@@ -670,6 +692,7 @@ void MatToPointXYZ(cv::Mat& OpencVPointCloud, cv::Mat& labelInfo, std::vector<cv
 			pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> rgb_handler5(modelTransformed, 0, 255, 255);
 			viewer->addPointCloud<pcl::PointXYZ>(modelTransformed, rgb_handler5, "model transformed");
 			viewer->addLine(point2, point3, "line");
+			viewer->addLine(pcl::PointXYZ(x_in_direction, 1.5f, z_min), pcl::PointXYZ(x_in_direction - 2* std::get<1>(direction).x(), 1.5f - 2 * std::get<1>(direction).y(), z_min - 2 * std::get<1>(direction).z()), "line2");
 			//viewer->addLine(pcl::PointXYZ(x_middle_OCT, 0.5f, 0), pcl::PointXYZ(x_in_direction, 0.5f - 2 * std::get<1>(direction).y(), -2 * std::get<1>(direction).z()), "middleOCT");
 			viewer->addCoordinateSystem(2.0);
 			viewer->initCameraParameters();

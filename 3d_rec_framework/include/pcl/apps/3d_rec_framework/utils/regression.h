@@ -50,7 +50,7 @@ std::vector<int> getInliers(pcl::PointCloud<pcl::PointXYZ>::Ptr& peak_points) {
 	pcl::SampleConsensusModelLine<pcl::PointXYZ>::Ptr
 		model(new pcl::SampleConsensusModelLine<pcl::PointXYZ>(peak_points));
 	pcl::RandomSampleConsensus<pcl::PointXYZ> ransac(model);
-	ransac.setDistanceThreshold(.01);
+	ransac.setDistanceThreshold(.1);
 	ransac.computeModel();
 	ransac.getInliers(inliers);
 	return inliers;
