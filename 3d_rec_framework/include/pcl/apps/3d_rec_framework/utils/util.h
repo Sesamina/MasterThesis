@@ -130,10 +130,9 @@ void cutModelinHalf(pcl::PointCloud<pcl::PointXYZ>::Ptr& modelCloud, pcl::PointC
 }
 
 //cut a part of the model off, size specified by the missing_frames number
-void cutPartOfModel(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, pcl::PointCloud<pcl::PointXYZ>::Ptr& cut, int missing_frames) {
-	float to_cut_until = (float)missing_frames / NUM_FRAMES;
+void cutPartOfModel(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, pcl::PointCloud<pcl::PointXYZ>::Ptr& cut, float to_cut_until) {
 	for (int i = 0; i < cloud->points.size(); i++) {
-		if (cloud->points.at(i).z >= to_cut_until) {
+		if (cloud->points.at(i).z < to_cut_until) {
 			cut->push_back(cloud->points.at(i));
 		}
 	}
@@ -243,6 +242,17 @@ float getMinZValue(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud) {
 		pcl::PointXYZ point = cloud->at(i);
 		if (point.z < z) {
 			z = point.z;
+		}
+	}
+	return z;
+}
+
+pcl::PointXYZ getMinPoint(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud) {
+	pcl::PointXYZ z(0.0f, 0.0f, 2.0f);
+	for (int i = 0; i < cloud->points.size(); i++) {
+		pcl::PointXYZ point = cloud->at(i);
+		if (point.z < z.z) {
+			z = point;
 		}
 	}
 	return z;

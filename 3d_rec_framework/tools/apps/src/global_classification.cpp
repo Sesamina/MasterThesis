@@ -495,7 +495,8 @@ void MatToPointXYZ(cv::Mat& OpencVPointCloud, cv::Mat& labelInfo, std::vector<cv
 		pcl::PointCloud<pcl::PointXYZ>::Ptr peak_points(new pcl::PointCloud<pcl::PointXYZ>);
 		boost::shared_ptr<std::vector<std::tuple<int, int, cv::Mat, cv::Mat>>> needle_width = recognizeOCT(point_cloud_cut, peak_points, oct_dir, only_tip);
 		pcl::PointCloud<pcl::PointXYZ>::Ptr model_half_Z(new pcl::PointCloud<pcl::PointXYZ>());
-		cutModelinHalf(point_cloud_cut, point_cloud_ptr, 2);
+		//cutModelinHalf(point_cloud_cut, point_cloud_ptr, 2);
+		cutPartOfModel(point_cloud_cut, point_cloud_ptr, 1.5f);
 
 		//-------------------------------
 		//shifting algorithm
@@ -510,7 +511,8 @@ void MatToPointXYZ(cv::Mat& OpencVPointCloud, cv::Mat& labelInfo, std::vector<cv
 			pcl::PointCloud<pcl::PointXYZ>::Ptr model_voxelized_cut(new pcl::PointCloud<pcl::PointXYZ>());
 			generatePointCloudFromModel(modelCloud, model_voxelized, path);
 			int missing_frames = NUM_FRAMES - needle_width->size();
-			cutPartOfModel(model_voxelized, model_voxelized_cut, 0);//missing_frames);
+			//cutPartOfModel(model_voxelized, model_voxelized_cut, 0);//missing_frames);
+			pcl::copyPointCloud(*model_voxelized, *model_voxelized_cut);
 			/*pcl::PointCloud<pcl::PointXYZ>::Ptr model_half_Y(new pcl::PointCloud<pcl::PointXYZ>());
 			cutModelinHalf(model_voxelized, model_half_Y, 1);
 			pcl::PointCloud<pcl::PointXYZ>::Ptr model_half_Z(new pcl::PointCloud<pcl::PointXYZ>());
@@ -541,6 +543,62 @@ void MatToPointXYZ(cv::Mat& OpencVPointCloud, cv::Mat& labelInfo, std::vector<cv
 			//build the transformation matrix with currently computed rotation and translation
 			Eigen::Matrix4f transformation = buildTransformationMatrix(rotation, initialTranslation);
 
+			//transform point cloud to initial values
+			pcl::PointCloud<pcl::PointXYZ>::Ptr modelTransformed(new pcl::PointCloud<pcl::PointXYZ>);
+			pcl::transformPointCloud(*model_voxelized_cut, *modelTransformed, transformation);
+
+			//------------------------------------------------------
+			// tip approximation
+			//------------------------------------------------------
+			float x_middle_OCT = computeMiddle(point_cloud_ptr, 0.0f);
+
+			float z_min = getMinZValue(modelTransformed);
+			float x_middle_model = computeMiddle(modelTransformed, z_min);
+
+			Eigen::Vector3f OCT_point(x_middle_OCT, 0.0f, 0.0f);
+			/*float x_in_direction = (OCT_point - (std::abs(0.0f - z_min) / std::get<1>(direction).z() * std::get<1>(direction))).x();
+			if (max_angle > 0) {
+				x_in_direction = x_middle_OCT;
+			}*/
+			float x_in_direction = computeTipX(modelTransformed, direction, x_middle_OCT);
+			float angle_to_rotate = 0.5f;
+			//TODO: refactor to method
+			{
+				pcl::ScopeTime t("Tip Approximation");
+				if (x_middle_model < x_in_direction) {
+					float r = 0.0f;
+					while (r > -360 && x_middle_model < x_in_direction) {
+						transformation = buildTransformationMatrix(rotateByAngle(-angle_to_rotate, transformation.block(0, 0, 3, 3)), shiftByValue(0.0f, initialTranslation, std::get<1>(direction)));
+						pcl::transformPointCloud(*model_voxelized_cut, *modelTransformed, transformation);
+						x_middle_model = computeMiddle(modelTransformed, getMinZValue(modelTransformed));
+						r -= angle_to_rotate;
+					}
+				}
+				else if (x_middle_model > x_in_direction) {
+					float r = 0.0f;
+					while (r < 360.0f && x_middle_model > x_in_direction) {
+						transformation = buildTransformationMatrix(rotateByAngle(angle_to_rotate, transformation.block(0, 0, 3, 3)), shiftByValue(0.0f, initialTranslation, std::get<1>(direction)));
+						pcl::transformPointCloud(*model_voxelized_cut, *modelTransformed, transformation);
+						x_middle_model = computeMiddle(modelTransformed, getMinZValue(modelTransformed));
+						r += angle_to_rotate;
+					}
+				}
+			}
+
+			Eigen::Matrix3f end_rot = transformation.block(0, 0, 3, 3);
+			Eigen::Vector3f eulerAngles = end_rot.eulerAngles(0, 1, 2);
+			eulerAngles *= 180 / M_PI;
+			std::cout << eulerAngles << std::endl;
+			float end_angle = 0.0f;
+			if (eulerAngles.z() < 0) {
+				end_angle = -180 - eulerAngles.z();
+			}
+			else {
+				end_angle = 180 - eulerAngles.z();
+			}
+			std::cout << "angle init: " << end_angle << std::endl;
+			end_angle *= -1.0f;
+
 			//std::vector<std::pair<float, float>> angle_count;
 			//std::vector<std::pair<float, float>> shift_count;
 			std::vector<std::tuple<float, float, float>> correspondence_count;
@@ -549,11 +607,11 @@ void MatToPointXYZ(cv::Mat& OpencVPointCloud, cv::Mat& labelInfo, std::vector<cv
 			//start of shifting algorithm
 			//--------------------------------------
 			//initialize interval values
-			float angleStart = -90.0f;
-			float angleEnd = 90.0f;
+			float angleStart = end_angle - 5.0f;//-90.0f;
+			float angleEnd = end_angle + 5.0f;//90.0f;
 			float angleStep = 1.0f;
 			float shiftStart = 0.0f;
-			float shiftEnd = 0.3f;
+			float shiftEnd = 0.3;;
 			float shiftStep = 0.05f;
 			//int max_index_angles = 0;
 			//int max_index_shift = 0;
@@ -616,50 +674,50 @@ void MatToPointXYZ(cv::Mat& OpencVPointCloud, cv::Mat& labelInfo, std::vector<cv
 				}
 			}
 
-			//transform point cloud to currently best values
-			pcl::PointCloud<pcl::PointXYZ>::Ptr modelTransformed(new pcl::PointCloud<pcl::PointXYZ>);
 			//transformation = buildTransformationMatrix(rotateByAngle(angle_count.at(max_index_angles).first, rotation), shiftByValue(shift_count.at(max_index_shift).first, initialTranslation, std::get<1>(direction)));
 			transformation = buildTransformationMatrix(rotateByAngle(max_angle, rotation), shiftByValue(max_shift, initialTranslation, std::get<1>(direction)));
 			pcl::transformPointCloud(*model_voxelized_cut, *modelTransformed, transformation);
 
-			float x_middle_OCT = computeMiddle(point_cloud_ptr, 0.0f);
+			//------------------------------------------------------
+			// tip approximation
+			//------------------------------------------------------
+			x_middle_OCT = computeMiddle(point_cloud_ptr, 0.0f);
 
-			float z_min = getMinZValue(modelTransformed);
-			float x_middle_model = computeMiddle(modelTransformed, z_min);
+			z_min = getMinZValue(modelTransformed);
+			x_middle_model = computeMiddle(modelTransformed, z_min);
 
-			Eigen::Vector3f OCT_point(x_middle_OCT, 0.0f, 0.0f);
-			float x_in_direction = (OCT_point - (std::abs(0.0f - z_min) / std::get<1>(direction).z() * std::get<1>(direction))).x();
+			OCT_point = Eigen::Vector3f(x_middle_OCT, 0.0f, 0.0f);
+			/*float x_in_direction = (OCT_point - (std::abs(0.0f - z_min) / std::get<1>(direction).z() * std::get<1>(direction))).x();
 			if (max_angle > 0) {
-				x_in_direction = x_middle_OCT;
-			}
-			std::cout << x_in_direction << std::endl;
+			x_in_direction = x_middle_OCT;
+			}*/
 			x_in_direction = computeTipX(modelTransformed, direction, x_middle_OCT);
-			std::cout << x_in_direction << std::endl;
 			{
-				pcl::ScopeTime t("Final Adjustments");
+				pcl::ScopeTime t("Tip Approximation");
 				if (x_middle_model < x_in_direction) {
-					while (x_middle_model < x_in_direction) {
-						transformation = buildTransformationMatrix(rotateByAngle(-0.5f, transformation.block(0, 0, 3, 3)), shiftByValue(max_shift, initialTranslation, std::get<1>(direction)));
+					float r = 0.0f;
+					while (r > -360.0f && x_middle_model < x_in_direction) {
+						transformation = buildTransformationMatrix(rotateByAngle(-angle_to_rotate, transformation.block(0, 0, 3, 3)), shiftByValue(max_shift, initialTranslation, std::get<1>(direction)));
 						pcl::transformPointCloud(*model_voxelized_cut, *modelTransformed, transformation);
 						x_middle_model = computeMiddle(modelTransformed, getMinZValue(modelTransformed));
+						r -= angle_to_rotate;
 					}
 				}
 				else if (x_middle_model > x_in_direction) {
-					while (x_middle_model > x_in_direction) {
-						transformation = buildTransformationMatrix(rotateByAngle(0.5f, transformation.block(0, 0, 3, 3)), shiftByValue(max_shift, initialTranslation, std::get<1>(direction)));
+					float r = 0.0f;
+					while (r < 360.0f && x_middle_model > x_in_direction) {
+						transformation = buildTransformationMatrix(rotateByAngle(angle_to_rotate, transformation.block(0, 0, 3, 3)), shiftByValue(max_shift, initialTranslation, std::get<1>(direction)));
 						pcl::transformPointCloud(*model_voxelized_cut, *modelTransformed, transformation);
 						x_middle_model = computeMiddle(modelTransformed, getMinZValue(modelTransformed));
+						r += angle_to_rotate;
 					}
 				}
 			}
 
-
-
-			Eigen::Matrix3f end_rot = transformation.block(0, 0, 3, 3);
-			Eigen::Vector3f eulerAngles = end_rot.eulerAngles(0, 1, 2);
+			end_rot = transformation.block(0, 0, 3, 3);
+			eulerAngles = end_rot.eulerAngles(0, 1, 2);
 			eulerAngles *= 180 / M_PI;
 			std::cout << eulerAngles << std::endl;
-			float end_angle = 0.0f;
 			if (eulerAngles.z() < 0) {
 				end_angle = -180 - eulerAngles.z();
 			}
@@ -668,6 +726,21 @@ void MatToPointXYZ(cv::Mat& OpencVPointCloud, cv::Mat& labelInfo, std::vector<cv
 			}
 
 			std::cout << std::endl << "final angle: " << end_angle << std::endl;
+			/*pcl::PointXYZ minPoint = getMinPoint(model_voxelized_cut);
+			Eigen::Vector4f minPointEigen(minPoint.x, minPoint.y, minPoint.z, 0.0f);
+			Eigen::Vector4f computedPoint = transformation * minPointEigen;
+			Eigen::Vector3f computed;
+			//how to apply transformation to a single point
+			computed << static_cast<float> (transformation(0, 0) * minPointEigen.x() + transformation(0, 1) * minPointEigen.y() + transformation(0, 2) * minPointEigen.z() + transformation(0, 3)),
+				static_cast<float> (transformation(1, 0) * minPointEigen.x() + transformation(1, 1) * minPointEigen.y() + transformation(1, 2) * minPointEigen.z() + transformation(1, 3)),
+				static_cast<float> (transformation(2, 0) * minPointEigen.x() + transformation(2, 1) * minPointEigen.y() + transformation(2, 2) * minPointEigen.z() + transformation(2, 3));
+
+			std::cout << "before: " << minPoint << std::endl;
+			std::cout << "after: " << getMinPoint(modelTransformed) << std::endl;
+			std::cout << "computed" << computed << std::endl;*/
+			Eigen::Vector4f centroid_transformed;
+			pcl::compute3DCentroid(*modelTransformed, centroid_transformed);
+			std::cout << "position: " << centroid_transformed;
 
 			//--------------------------------
 			//visualization
@@ -692,7 +765,7 @@ void MatToPointXYZ(cv::Mat& OpencVPointCloud, cv::Mat& labelInfo, std::vector<cv
 			pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> rgb_handler5(modelTransformed, 0, 255, 255);
 			viewer->addPointCloud<pcl::PointXYZ>(modelTransformed, rgb_handler5, "model transformed");
 			viewer->addLine(point2, point3, "line");
-			viewer->addLine(pcl::PointXYZ(x_in_direction, 1.5f, z_min), pcl::PointXYZ(x_in_direction - 2* std::get<1>(direction).x(), 1.5f - 2 * std::get<1>(direction).y(), z_min - 2 * std::get<1>(direction).z()), "line2");
+			viewer->addLine(pcl::PointXYZ(x_in_direction, 0.75f, z_min), pcl::PointXYZ(x_in_direction - 2* std::get<1>(direction).x(), 0.75f - 2 * std::get<1>(direction).y(), z_min - 2 * std::get<1>(direction).z()), "line2");
 			//viewer->addLine(pcl::PointXYZ(x_middle_OCT, 0.5f, 0), pcl::PointXYZ(x_in_direction, 0.5f - 2 * std::get<1>(direction).y(), -2 * std::get<1>(direction).z()), "middleOCT");
 			viewer->addCoordinateSystem(2.0);
 			viewer->initCameraParameters();
