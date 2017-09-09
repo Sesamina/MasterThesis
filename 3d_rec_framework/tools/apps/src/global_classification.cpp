@@ -269,11 +269,6 @@ float computeCorrespondences(Eigen::Matrix4f& guess, pcl::PointCloud<pcl::PointX
 //-------------------------------------------------------------------
 //shifting/roll in defined intervals with summing up correspondences
 //-------------------------------------------------------------------
-//void shift_and_roll(float angle_min, float angle_max, float angle_step,
-//	float shift_min, float shift_max, float shift_step,
-//	std::vector<std::pair<float, float>>& angle_count, std::vector<std::pair<float, float>>& shift_and_count,
-//	Eigen::Matrix3f rotation, Eigen::Vector3f initialTranslation, Eigen::Vector3f direction,
-//	pcl::PointCloud<pcl::PointXYZ>::Ptr model_voxelized, pcl::PointCloud<pcl::PointXYZ>::Ptr point_cloud_ptr, bool use_improvement) {
 //	int angle_max_index = 0;
 //	int angle_index = 0;
 //	for (float i = angle_min; i <= angle_max; i += angle_step) {
@@ -448,8 +443,7 @@ float computeTipX(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud, std::pair<Eigen::Ve
 // tip approximation
 //------------------------------------------------------
 Eigen::Matrix4f tipApproximation(pcl::PointCloud<pcl::PointXYZ>::Ptr point_cloud_ptr, pcl::PointCloud<pcl::PointXYZ>::Ptr& modelTransformed,
-	pcl::PointCloud<pcl::PointXYZ>::Ptr model_voxelized, std::pair<Eigen::Vector3f, Eigen::Vector3f> direction, 
-	Eigen::Vector3f initialTranslation, const Eigen::Matrix4f& transformation) {
+	pcl::PointCloud<pcl::PointXYZ>::Ptr model_voxelized, std::pair<Eigen::Vector3f, Eigen::Vector3f> direction, const Eigen::Matrix4f& transformation) {
 	Eigen::Matrix4f transform = transformation;
 	float x_middle_OCT = computeMiddle(point_cloud_ptr, 0.0f);
 
@@ -478,7 +472,7 @@ Eigen::Matrix4f tipApproximation(pcl::PointCloud<pcl::PointXYZ>::Ptr point_cloud
 			second = x_middle_model;
 		}
 		while (r < 360.0f && first < second) {
-			transform = buildTransformationMatrix(rotateByAngle(sign * angle_to_rotate, transform.block(0, 0, 3, 3)), shiftByValue(0.0f, initialTranslation, std::get<1>(direction)));
+			transform = buildTransformationMatrix(rotateByAngle(sign * angle_to_rotate, transform.block(0, 0, 3, 3)), transform.block(0, 3, 3, 0));
 			pcl::transformPointCloud(*model_voxelized, *modelTransformed, transform);
 			if (sign < 0) {
 				first = computeMiddle(modelTransformed, getMinZValue(modelTransformed));
@@ -602,7 +596,7 @@ int main(int argc, char ** argv)
 		//----------------------
 		//tip approximation
 		//----------------------
-		transformation = tipApproximation(point_cloud_ptr, modelTransformed, model_voxelized, direction, initialTranslation, transformation);
+		transformation = tipApproximation(point_cloud_ptr, modelTransformed, model_voxelized, direction, transformation);
 		float end_angle = getAngleFromMatrix(transformation);
 
 		//VIDEO
@@ -612,22 +606,25 @@ int main(int argc, char ** argv)
 		filename << "C:\\Users\\ramon\\Documents\\Uni\\Masterarbeit\\video\\" << global_video_ctr++ << ".png";
 		viewerForVideo->saveScreenshot(filename.str());
 
-		//std::vector<std::pair<float, float>> angle_count;
-		//std::vector<std::pair<float, float>> shift_count;
-		std::vector<std::tuple<float, float, float>> correspondence_count;
-
 		//--------------------------------------
 		//start of shifting algorithm
 		//--------------------------------------
+		//angle, shift, count in one vector
+		std::vector<std::tuple<float, float, float>> correspondence_count;
+		//angle and count
+		std::vector<std::pair<float, float>> angle_count;
+		//shift and count
+		std::vector<std::pair<float, float>> shift_count;
+
 		//initialize interval values
-		float angleStart = end_angle - 5.0f;//-90.0f;
-		float angleEnd = end_angle + 5.0f;//90.0f;
+		float angleStart = end_angle - 5.0f;
+		float angleEnd = end_angle + 5.0f;
 		float angleStep = 1.0f;
 		float shiftStart = 0.0f;
 		float shiftEnd = 0.3;
 		float shiftStep = 0.05f;
-		//int max_index_angles = 0;
-		//int max_index_shift = 0;
+		int max_index_angles = 0;
+		int max_index_shift = 0;
 		int correspondence_index = 0;
 		float max_angle = 0.0f;
 		float max_shift = 0.0f;
@@ -638,38 +635,53 @@ int main(int argc, char ** argv)
 		{
 			pcl::ScopeTime t("Shift and Roll");
 			for (int i = 0; i < 4; i++) {
-				//angle_count.clear();
-				//shift_count.clear();
+				angle_count.clear();
+				shift_count.clear();
 				correspondence_count.clear();
 				//apply shift and roll in small steps in given intervals and compute correspondences
-				//shift_and_roll(angleStart, angleEnd, angleStep, shiftStart, shiftEnd, shiftStep, angle_count, shift_count, rotation, initialTranslation, std::get<1>(direction), model_voxelized, point_cloud_ptr, use_improvement);
 				shift_and_roll_without_sum(angleStart, angleEnd, angleStep, shiftStart, shiftEnd, shiftStep, correspondence_count, rotation, initialTranslation, std::get<1>(direction), model_voxelized, point_cloud_ptr, modelTransformed, viewerForVideo, rgb_handler5);
+				
+				//TODO: fill angle_count and shift_count							
+				for (int i = 0; i < correspondence_count.size(); i++) {
+					std::tuple<float, float, float> current = correspondence_count.at(i);
+					float angle_tmp = std::get<0>(current);
+					float shift_tmp = std::get<1>(current);
+					float count_tmp = std::get<2>(current);
+					std::vector<std::pair<float, float>>::iterator it;
+					it = std::find_if(angle_count.begin(), angle_count.end(), [angle_tmp](const std::pair<float, float>& p1) {
+						return p1.first == angle_tmp; });
+					if (it != angle_count.end()) {
+						angle_count.at(std::distance(angle_count.begin(), it)).second += count_tmp;
+					}
+					else {
+						angle_count.push_back(std::pair<float, float>(angle_tmp, count_tmp));
+					}
+					it = std::find_if(shift_count.begin(), shift_count.end(), [shift_tmp](const std::pair<float, float>& p1) {
+						return p1.first == shift_tmp; });
+					if (it != shift_count.end()) {
+						shift_count.at(std::distance(shift_count.begin(), it)).second += count_tmp;
+					}
+					else {
+						shift_count.push_back(std::pair<float, float>(shift_tmp, count_tmp));
+					}
+				}
+				
 				//find index of maximum correspondences
-				//max_index_angles = findMaxIndexOfVectorOfPairs(angle_count);
-				//max_index_shift = findMaxIndexOfVectorOfPairs(shift_count);
+				max_index_angles = findMaxIndexOfVectorOfPairs(angle_count);
+				max_index_shift = findMaxIndexOfVectorOfPairs(shift_count);
 				correspondence_index = findMaxIndexOfVectorOfTuples(correspondence_count);
-				max_angle = std::get<0>(correspondence_count.at(correspondence_index));
-				max_shift = std::get<1>(correspondence_count.at(correspondence_index));
+				max_angle = std::get<0>(angle_count.at(max_index_angles));
+				max_shift = std::get<0>(shift_count.at(max_index_shift));
 
 				//check bounds of vectors to make sure that in both directions of max indices you can go as far as specified
-				/*int angle_min = checkMinBoundsForVectorIndex(NUM_STEPS, max_index_angles);
-				int angle_max = checkMaxBoundsForVectorIndex(NUM_STEPS, max_index_angles, angle_count.size());
-				int shift_min = checkMinBoundsForVectorIndex(NUM_STEPS, max_index_shift);
-				int shift_max = checkMaxBoundsForVectorIndex(NUM_STEPS, max_index_shift, shift_count.size());*/
 				angleStart = checkMinBoundsForValue(max_angle, angleStart, angleStep);
 				angleEnd = checkMaxBoundsForValue(max_angle, angleEnd, angleStep);
 				shiftStart = checkMinBoundsForValue(max_shift, shiftStart, shiftStep);
 				shiftEnd = checkMaxBoundsForValue(max_shift, shiftEnd, shiftStep);
 
 				//assign new interval values
-				/*angleStart = angle_count.at(max_index_angles - angle_min).first;
-				angleEnd = angle_count.at(max_index_angles + angle_max).first;
-				shiftStart = shift_count.at(max_index_shift - shift_min).first;
-				shiftEnd = shift_count.at(max_index_shift + shift_max).first;*/
 				angleStep /= 5.0f;
 				shiftStep /= 5.0000f;
-				//std::cout << "angle: " << angle_count.at(max_index_angles).first * -1 << std::endl;
-				//std::cout << "shift: " << shift_count.at(max_index_shift).first << std::endl;
 				std::cout << "angle: " << max_angle * -1 << std::endl;
 				std::cout << "shift: " << max_shift << std::endl;
 				std::cout << "end of round: " << i << std::endl;
@@ -699,7 +711,7 @@ int main(int argc, char ** argv)
 		//------------------------------------------------------
 		// tip approximation
 		//------------------------------------------------------
-		transformation = tipApproximation(point_cloud_ptr, modelTransformed, model_voxelized, direction, initialTranslation, transformation);
+		transformation = tipApproximation(point_cloud_ptr, modelTransformed, model_voxelized, direction, transformation);
 		end_angle = getAngleFromMatrix(transformation);
 
 		//VIDEO
