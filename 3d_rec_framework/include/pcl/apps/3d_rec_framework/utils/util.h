@@ -6,13 +6,6 @@
 #include <boost/filesystem.hpp>
 #include <boost/algorithm/string.hpp>
 
-//fixed number of OCT images
-#define NUM_FRAMES 128
-//scale of OCT cube
-#define SCALE_X 2.7
-#define SCALE_Y 2.4
-#define SCALE_Z 3.0
-
 // process the path to get the right format 
 std::string getDirectoryPath(std::string path) {
 	std::replace(path.begin(), path.end(), '\\', '/');

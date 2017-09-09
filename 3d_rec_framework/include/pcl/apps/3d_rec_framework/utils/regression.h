@@ -1,35 +1,8 @@
 #pragma once
 
-
-//#include <mlpack/methods/linear_regression/linear_regression.hpp>
-//#include <armadillo>
 #include "opencv2\opencv.hpp"
 #include <pcl/sample_consensus/ransac.h>
 #include <pcl/sample_consensus/sac_model_line.h>
-
-
-// regress a line through the given points and return error --frameNum, width---
-//std::tuple<double, arma::vec> regress(std::vector<std::tuple<int, int>>& pos)
-//{
-	//// fill the data in
-	//arma::mat x_val(1, pos.size());
-	//arma::vec w_val(pos.size());
-	//for (int i = 0; i < pos.size(); i++)
-	//{
-	//	x_val(0, i) = std::get<0>(pos[i]);
-	//	w_val(i) = std::get<1>(pos[i]);
-	//}
-
-	//// regress
-	//mlpack::regression::LinearRegression lr(x_val, w_val);
-
-	//// now calculate error
-	//arma::vec result(pos.size());
-	//lr.Predict(x_val, result);
-	//std::tuple<double, arma::vec> error_and_parameters(lr.ComputeError(x_val, w_val), lr.Parameters());
-	//return error_and_parameters;
-	
-//}
 
 double LinearRegression(std::vector<std::tuple<int, int>>& input)
 {
