@@ -26,10 +26,7 @@
 #include <pcl/registration/correspondence_estimation.h>
 #include <pcl/registration/correspondence_rejection.h>
 #include <pcl/registration/default_convergence_criteria.h>
-#include <pcl/registration/correspondence_rejection_distance.h>
 #include <pcl/registration/correspondence_rejection_median_distance.h>
-#include <pcl/registration/correspondence_rejection_one_to_one.h>
-#include <pcl/registration/correspondence_rejection_sample_consensus.h>
 #include <pcl/registration/distances.h>
 
 #include "pcl/apps/3d_rec_framework/utils/regression.h"
@@ -255,57 +252,17 @@ float computeCorrespondences(Eigen::Matrix4f& guess, pcl::PointCloud<pcl::PointX
 	rejector_median->getCorrespondences(*correspondences);
 
 	//VIDEO
-	corr_cloud->clear();
+	/*corr_cloud->clear();
 	for (int i = 0; i < correspondences->size(); i++) {
 		corr_cloud->push_back(input->at(correspondences->at(i).index_query));
 	}
-	pcl::transformPointCloud(*corr_cloud, *corr_cloud, guess);
+	pcl::transformPointCloud(*corr_cloud, *corr_cloud, guess);*/
 
 	//get number of correspondences
 	size_t cnt = correspondences->size();
 	return (float)cnt;
 }
 
-//-------------------------------------------------------------------
-//shifting/roll in defined intervals with summing up correspondences
-//-------------------------------------------------------------------
-//	int angle_max_index = 0;
-//	int angle_index = 0;
-//	for (float i = angle_min; i <= angle_max; i += angle_step) {
-//		float angleCount = 0.0f;
-//		for (float j = shift_min; j <= shift_max; j += shift_step) {
-//			Eigen::Matrix3f rot = rotateByAngle((float)i, rotation);
-//			Eigen::Vector3f trans = shiftByValue((float)j, initialTranslation, direction);
-//			Eigen::Matrix4f transform = buildTransformationMatrix(rot, trans);
-//			float correspondence_count = computeCorrespondences(transform, model_voxelized, point_cloud_ptr);
-//			std::vector<std::pair<float, float>>::iterator it;
-//			it = std::find_if(shift_and_count.begin(), shift_and_count.end(), [j](const std::pair<float, float>& p1) {
-//				return p1.first == j; });
-//			if (it != shift_and_count.end()) {
-//				shift_and_count.at(std::distance(shift_and_count.begin(), it)).second += correspondence_count;
-//			}
-//			else {
-//				shift_and_count.push_back(std::pair<float, float>(j, correspondence_count));
-//			}
-//			angleCount += correspondence_count;
-//		}
-//		//----------------------------------
-//		//algorithm performance improvement
-//		//if correspondence number didn't grow for 5 angles, stop everything because it won't get better
-//		if (use_improvement) {
-//			if (angle_max_index + ((std::abs(angle_min) + std::abs(angle_max)) / angle_step) / 4 == angle_index) {
-//				break;
-//			}
-//			//a better value than the current one was found, save the new index of the maximum value
-//			if (angle_index > angle_max_index && angleCount > angle_count.at(angle_max_index).second) {
-//				angle_max_index = angle_index;
-//			}
-//			angle_index++;
-//		}
-//		//----------------------------------
-//		angle_count.push_back(std::pair<float, float>(i, angleCount));
-//	}
-//}
 
 //-------------------------------------------------------------------
 //shifting/roll in defined intervals without summing up correspondences
@@ -326,7 +283,8 @@ void shift_and_roll_without_sum(float angle_min, float angle_max, float angle_st
 	//VIDEO
 	pcl::PointCloud<pcl::PointXYZ>::Ptr corr_cloud(new pcl::PointCloud<pcl::PointXYZ>);
 	pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> rgb_handler6(corr_cloud, 255, 0, 0);
-	//#pragma omp parallel for num_threads(omp_get_num_procs())
+
+#pragma omp parallel for num_threads(omp_get_num_procs())
 	for (int angle = 0; angle < num_angle_steps; angle++) {
 		int shift_index = 0;
 		for (float shift = shift_min; shift <= shift_max; shift += shift_step) {
@@ -339,14 +297,14 @@ void shift_and_roll_without_sum(float angle_min, float angle_max, float angle_st
 			pcl::transformPointCloud(*model_voxelized, *modelTransformed, transform);
 			viewerForVideo->updatePointCloud(modelTransformed, rgb_handler5, "model transformed");
 			//VIDEO
-			if (!viewerForVideo->updatePointCloud(corr_cloud, rgb_handler6, "correspondences")) {
+			/*if (!viewerForVideo->updatePointCloud(corr_cloud, rgb_handler6, "correspondences")) {
 				viewerForVideo->addPointCloud(corr_cloud, rgb_handler6, "correspondences");
 				viewerForVideo->setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "correspondences");
 			}
 			std::stringstream fileName;
 			fileName << "C:\\Users\\ramon\\Documents\\Uni\\Masterarbeit\\video\\" << global_video_ctr++ << ".png";
 			viewerForVideo->saveScreenshot(fileName.str());
-			viewerForVideo->spinOnce(100);
+			viewerForVideo->spinOnce(100);*/
 		}
 	}
 }
@@ -533,10 +491,11 @@ int main(int argc, char ** argv)
 	//process OCT images
 	//-------------------------------------
 	pcl::PointCloud<pcl::PointXYZ>::Ptr point_cloud_ptr(new pcl::PointCloud<pcl::PointXYZ>);
-	pcl::PointCloud<pcl::PointXYZ>::Ptr point_cloud_cut(new pcl::PointCloud<pcl::PointXYZ>);
+	pcl::PointCloud<pcl::PointXYZ>::Ptr point_cloud_not_cut(new pcl::PointCloud<pcl::PointXYZ>);
 	pcl::PointCloud<pcl::PointXYZ>::Ptr peak_points(new pcl::PointCloud<pcl::PointXYZ>);
-	boost::shared_ptr<std::vector<std::tuple<int, int, cv::Mat, cv::Mat>>> needle_width = recognizeOCT(point_cloud_cut, peak_points, oct_dir, only_tip);
-	cutPartOfModel(point_cloud_cut, point_cloud_ptr, 1.5f);
+	boost::shared_ptr<std::vector<std::tuple<int, int, cv::Mat, cv::Mat>>> needle_width = recognizeOCT(point_cloud_not_cut, peak_points, oct_dir, only_tip);
+	//cutPartOfModel(point_cloud_not_cut, point_cloud_ptr, 1.3f);
+	//cutModelinHalf(point_cloud_not_cut, point_cloud_ptr, 2);
 
 	//-------------------------------
 	//shifting algorithm
@@ -549,6 +508,8 @@ int main(int argc, char ** argv)
 		pcl::PointCloud<pcl::PointXYZ>::Ptr modelCloud(new pcl::PointCloud<pcl::PointXYZ>);
 		pcl::PointCloud<pcl::PointXYZ>::Ptr model_voxelized(new pcl::PointCloud<pcl::PointXYZ>());
 		generatePointCloudFromModel(modelCloud, model_voxelized, path);
+		//cut oct cloud
+		cutPartOfModel(point_cloud_not_cut, point_cloud_ptr, getModelSize(model_voxelized) - 0.2f);
 
 		//--------------------------------------
 		//compute initial translation/rotation
@@ -580,18 +541,18 @@ int main(int argc, char ** argv)
 
 		//VIDEO
 		boost::shared_ptr<pcl::visualization::PCLVisualizer> viewerForVideo(new pcl::visualization::PCLVisualizer("3D Viewer"));
-		viewerForVideo->setBackgroundColor(0, 0, 0);
+		/*viewerForVideo->setBackgroundColor(0, 0, 0);
 		pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> rgb_handler3(point_cloud_ptr, 0, 255, 0);
-		viewerForVideo->addPointCloud<pcl::PointXYZ>(point_cloud_ptr, rgb_handler3, "oct cloud");
+		viewerForVideo->addPointCloud<pcl::PointXYZ>(point_cloud_ptr, rgb_handler3, "oct cloud");*/
 		pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> rgb_handler5(modelTransformed, 0, 255, 255);
-		viewerForVideo->addPointCloud<pcl::PointXYZ>(modelTransformed, rgb_handler5, "model transformed");
+		/*viewerForVideo->addPointCloud<pcl::PointXYZ>(modelTransformed, rgb_handler5, "model transformed");
 		viewerForVideo->addCoordinateSystem(2.0);
 		viewerForVideo->initCameraParameters();
 		viewerForVideo->setCameraPosition(1.45732, 2.56393, -1.49624, -0.127368, 0.760336, 0.63692);
 		viewerForVideo->spinOnce();
 		std::stringstream fileName;
 		fileName << "C:\\Users\\ramon\\Documents\\Uni\\Masterarbeit\\video\\" << global_video_ctr++ << ".png";
-		viewerForVideo->saveScreenshot(fileName.str());
+		viewerForVideo->saveScreenshot(fileName.str());*/
 
 		//----------------------
 		//tip approximation
@@ -600,11 +561,11 @@ int main(int argc, char ** argv)
 		float end_angle = getAngleFromMatrix(transformation);
 
 		//VIDEO
-		viewerForVideo->updatePointCloud(modelTransformed, rgb_handler5, "model transformed");
+		/*viewerForVideo->updatePointCloud(modelTransformed, rgb_handler5, "model transformed");
 		viewerForVideo->spinOnce();
 		std::stringstream filename;
 		filename << "C:\\Users\\ramon\\Documents\\Uni\\Masterarbeit\\video\\" << global_video_ctr++ << ".png";
-		viewerForVideo->saveScreenshot(filename.str());
+		viewerForVideo->saveScreenshot(filename.str());*/
 
 		//--------------------------------------
 		//start of shifting algorithm
@@ -705,8 +666,8 @@ int main(int argc, char ** argv)
 		pcl::transformPointCloud(*model_voxelized, *modelTransformed, transformation);
 
 		//VIDEO
-		viewerForVideo->updatePointCloud(modelTransformed, rgb_handler5, "model transformed");
-		viewerForVideo->spinOnce();
+		/*viewerForVideo->updatePointCloud(modelTransformed, rgb_handler5, "model transformed");
+		viewerForVideo->spinOnce();*/
 
 		//------------------------------------------------------
 		// tip approximation
@@ -715,12 +676,12 @@ int main(int argc, char ** argv)
 		end_angle = getAngleFromMatrix(transformation);
 
 		//VIDEO
-		viewerForVideo->updatePointCloud(modelTransformed, rgb_handler5, "model transformed");
+		/*viewerForVideo->updatePointCloud(modelTransformed, rgb_handler5, "model transformed");
 		viewerForVideo->spinOnce();
 		std::stringstream file_name;
 		file_name << "C:\\Users\\ramon\\Documents\\Uni\\Masterarbeit\\video\\" << global_video_ctr++ << ".png";
 		viewerForVideo->saveScreenshot(file_name.str());
-		viewerForVideo->spin();
+		viewerForVideo->spin();*/
 
 		//get final position
 		Eigen::Vector4f centroid_transformed;
